@@ -1,0 +1,16 @@
+# build output and local state
+.daml/
+ledger/
+node_modules/
+.DS_Store
+
+# tooling that is not part of the product
+.agents/
+.claude/
+skills-lock.json
+
+# drafts for the hackathon submission form (contain fill-in placeholders)
+docs/submission/
+
+# rendered demo video (upload the mp4 to YouTube instead)
+*.mp4
