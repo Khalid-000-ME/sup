@@ -1,0 +1,29 @@
+module Sup.Types where
+
+-- | What a settlement condition currently is for a trade.
+-- Derived from contract existence, never stored mutably on the trade.
+data ConditionState
+  = NoConditionRequired
+  | AwaitingApproval
+  | ConditionApproved
+  | ConditionRejected
+  deriving (Eq, Show)
+
+data TerminalOutcome
+  = SettledDvP
+  | CancelledByAgreement
+  | ExpiredUnsettled
+  deriving (Eq, Show)
+
+-- | Identifies the tokenized asset being traded.
+data AssetDescriptor = AssetDescriptor with
+  issuer : Party
+  symbol : Text
+  classId : Text
+    deriving (Eq, Show)
+
+-- | Identifies the payment token.
+data CashDescriptor = CashDescriptor with
+  issuer : Party
+  currency : Text
+    deriving (Eq, Show)
