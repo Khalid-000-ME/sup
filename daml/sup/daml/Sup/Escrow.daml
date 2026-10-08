@@ -1,0 +1,631 @@
+-- | Sup: private delivery-versus-payment escrow.
+--
+-- Design note. `EscrowTrade` is deliberately **immutable**: it records the
+-- agreed terms and nothing else. Lock state and condition state are derived
+-- from the existence of separate contracts. This avoids the authority problem
+-- a mutable trade contract runs into (recording a lock would need both
+-- parties' authority inside a choice that only has the depositor's), and it
+-- keeps each fact disclosed to the narrowest possible set of parties.
+module Sup.Escrow where
+
+import DA.Action (when)
+import DA.Foldable (forA_)
+import DA.Optional (optionalToList)
+import Sup.Assets
+import DA.TextMap qualified as TextMap
+import Splice.Api.Token.HoldingV1
+import Splice.Api.Token.MetadataV1
+import Splice.Api.Token.AllocationV1
+import Sup.Types
+
+
+-- | Condition check shared by both settlement choices.
+checkCondition : Text -> Optional Party -> Optional Text -> Optional (ContractId ConditionApproval) -> Update ()
+checkCondition escrowId settlementAgent documentHash approvalCid =
+  case (settlementAgent, documentHash) of
+    (Some agent, Some docHash) -> case approvalCid of
+      None -> abort "this trade requires an approved settlement condition"
+      Some cid -> do
+        approval <- fetch cid
+        assertMsg "approval belongs to another trade" (approval.escrowId == escrowId)
+        assertMsg "approval is from the wrong agent" (approval.settlementAgent == agent)
+        assertMsg "approval is for a different document" (approval.documentHash == docHash)
+    _ -> pure ()
+
+-- | Issuer→owner delegation. A choice here carries BOTH the issuer's and the
+-- owner's authority, which is what lets a depositor move issuer-signed units
+-- into escrow in a single transaction.
+template Custody
+  with
+    issuer : Party
+    owner : Party
+  where
+    signatory issuer, owner
+
+    -- Seller moves `quantity` of an asset holding into escrow.
+    nonconsuming choice LockAssetLeg : ContractId LockedAsset
+      with
+        escrowCid : ContractId EscrowTrade
+        assetCid : ContractId AssetToken
+      controller owner
+      do
+        now <- getTime
+        escrow <- fetch escrowCid
+        asset <- fetch assetCid
+        assertMsg "you are not the seller on this trade" (escrow.seller == owner)
+        assertMsg "trade has expired" (now < escrow.expiry)
+        assertMsg "wrong asset issuer for this custody account" (asset.issuer == issuer)
+        assertMsg "asset issuer does not match the agreed terms" (asset.issuer == escrow.assetDescriptor.issuer)
+        assertMsg "asset class does not match the agreed terms" (asset.assetClass == escrow.assetDescriptor.classId)
+        assertMsg "you do not own this holding" (asset.owner == owner)
+        assertMsg "insufficient asset quantity" (asset.quantity >= escrow.assetQuantity)
+
+        archive assetCid
+        when (asset.quantity > escrow.assetQuantity) do
+          _ <- create asset with quantity = asset.quantity - escrow.assetQuantity
+          pure ()
+
+        create LockedAsset with
+          escrowId = escrow.escrowId
+          assetIssuer = issuer
+          seller = escrow.seller
+          buyer = escrow.buyer
+          assetClass = asset.assetClass
+          quantity = escrow.assetQuantity
+          metadataHash = asset.metadataHash
+          expiry = escrow.expiry
+          lockedAt = now
+
+    -- Buyer moves `cashAmount` of a cash holding into escrow.
+    nonconsuming choice LockPaymentLeg : ContractId LockedPayment
+      with
+        escrowCid : ContractId EscrowTrade
+        cashCid : ContractId CashToken
+      controller owner
+      do
+        now <- getTime
+        escrow <- fetch escrowCid
+        cash <- fetch cashCid
+        assertMsg "you are not the buyer on this trade" (escrow.buyer == owner)
+        assertMsg "trade has expired" (now < escrow.expiry)
+        assertMsg "wrong cash issuer for this custody account" (cash.issuer == issuer)
+        assertMsg "cash issuer does not match the agreed terms" (cash.issuer == escrow.cashDescriptor.issuer)
+        assertMsg "currency does not match the agreed terms" (cash.currency == escrow.cashDescriptor.currency)
+        assertMsg "you do not own this holding" (cash.owner == owner)
+        assertMsg "insufficient payment amount" (cash.amount >= escrow.cashAmount)
+
+        archive cashCid
+        when (cash.amount > escrow.cashAmount) do
+          _ <- create cash with amount = cash.amount - escrow.cashAmount
+          pure ()
+
+        create LockedPayment with
+          escrowId = escrow.escrowId
+          cashIssuer = issuer
+          buyer = escrow.buyer
+          seller = escrow.seller
+          currency = cash.currency
+          amount = escrow.cashAmount
+          expiry = escrow.expiry
+          lockedAt = now
+
+template CustodyInvite
+  with
+    issuer : Party
+    owner : Party
+  where
+    signatory issuer
+    observer owner
+    choice AcceptCustody : ContractId Custody
+      controller owner
+      do create Custody with issuer, owner
+
+-- | Private bilateral terms, proposed by the seller.
+template TradeProposal
+  with
+    escrowId : Text
+    seller : Party
+    buyer : Party
+    settlementAgent : Optional Party
+    auditor : Optional Party
+    assetDescriptor : AssetDescriptor
+    assetQuantity : Decimal
+    cashDescriptor : CashDescriptor
+    cashAmount : Decimal
+    documentHash : Optional Text
+    expiry : Time
+    proposedAt : Time
+  where
+    signatory seller
+    observer buyer, optionalToList auditor
+
+    ensure assetQuantity > 0.0 && cashAmount > 0.0 && seller /= buyer
+
+    -- Buyer accepts: the escrow becomes active, and if a condition is
+    -- required a minimal-disclosure request is raised for the agent.
+    choice AcceptTrade : (ContractId EscrowTrade, Optional (ContractId ConditionRequest))
+      controller buyer
+      do
+        now <- getTime
+        assertMsg "proposal has expired" (now < expiry)
+        escrowCid <- create EscrowTrade with
+          escrowId, seller, buyer, settlementAgent, auditor
+          assetDescriptor, assetQuantity, cashDescriptor, cashAmount
+          documentHash, expiry
+          acceptedAt = now
+        reqCid <- case (settlementAgent, documentHash) of
+          (Some agent, Some docHash) -> do
+            c <- create ConditionRequest with
+              escrowId, seller, buyer
+              settlementAgent = agent
+              documentHash = docHash
+              requestedAt = now
+              expiry
+            pure (Some c)
+          _ -> pure None
+        pure (escrowCid, reqCid)
+
+    choice WithdrawProposal : ()
+      controller seller
+      do pure ()
+
+    choice RejectProposal : ()
+      controller buyer
+      do pure ()
+
+-- | The active trade. Immutable: terms only.
+-- Visible to the two principals and, if designated, an auditor.
+-- The settlement agent is deliberately NOT an observer — it never sees price,
+-- asset class or quantity (see ConditionRequest).
+template EscrowTrade
+  with
+    escrowId : Text
+    seller : Party
+    buyer : Party
+    settlementAgent : Optional Party
+    auditor : Optional Party
+    assetDescriptor : AssetDescriptor
+    assetQuantity : Decimal
+    cashDescriptor : CashDescriptor
+    cashAmount : Decimal
+    documentHash : Optional Text
+    expiry : Time
+    acceptedAt : Time
+  where
+    signatory seller, buyer
+    observer optionalToList auditor
+
+    ensure assetQuantity > 0.0 && cashAmount > 0.0
+
+    -- | Atomic delivery-versus-payment. Either everything below commits, or
+    -- nothing does: both locked legs are consumed and both delivery legs are
+    -- created in this one transaction.
+    choice SettleDvP : (ContractId AssetToken, ContractId CashToken, ContractId SettlementReceipt)
+      with
+        lockedAssetCid : ContractId LockedAsset
+        lockedPaymentCid : ContractId LockedPayment
+        approvalCid : Optional (ContractId ConditionApproval)
+        settler : Party
+      controller settler
+      do
+        now <- getTime
+        assertMsg "only the seller or the buyer can settle" (settler == seller || settler == buyer)
+        assertMsg "trade has expired" (now < expiry)
+
+        lockedAsset <- fetch lockedAssetCid
+        lockedPayment <- fetch lockedPaymentCid
+        assertMsg "asset lock belongs to another trade" (lockedAsset.escrowId == escrowId)
+        assertMsg "payment lock belongs to another trade" (lockedPayment.escrowId == escrowId)
+        assertMsg "asset lock has the wrong parties" (lockedAsset.seller == seller && lockedAsset.buyer == buyer)
+        assertMsg "payment lock has the wrong parties" (lockedPayment.seller == seller && lockedPayment.buyer == buyer)
+        assertMsg "locked quantity does not match the terms" (lockedAsset.quantity == assetQuantity)
+        assertMsg "locked amount does not match the terms" (lockedPayment.amount == cashAmount)
+
+        -- Settlement condition, when the terms require one.
+        case (settlementAgent, documentHash) of
+          (Some agent, Some docHash) -> case approvalCid of
+            None -> abort "this trade requires an approved settlement condition"
+            Some cid -> do
+              approval <- fetch cid
+              assertMsg "approval belongs to another trade" (approval.escrowId == escrowId)
+              assertMsg "approval is from the wrong agent" (approval.settlementAgent == agent)
+              assertMsg "approval is for a different document" (approval.documentHash == docHash)
+          _ -> pure ()
+
+        -- Execute both legs' standard Allocations. They are consumed and both delivery
+        -- Holdings are created in this one transaction.
+        let noArgs = ExtraArgs with context = emptyChoiceContext, meta = emptyMetadata
+        assetResult <- exercise (toInterfaceContractId @Allocation lockedAssetCid) Allocation_ExecuteTransfer with extraArgs = noArgs
+        cashResult <- exercise (toInterfaceContractId @Allocation lockedPaymentCid) Allocation_ExecuteTransfer with extraArgs = noArgs
+        deliveredAsset <- case assetResult.receiverHoldingCids of
+          [h] -> pure (fromInterfaceContractId @AssetToken h)
+          _ -> abort "asset allocation must deliver exactly one holding"
+        deliveredCash <- case cashResult.receiverHoldingCids of
+          [h] -> pure (fromInterfaceContractId @CashToken h)
+          _ -> abort "payment allocation must deliver exactly one holding"
+        receipt <- create SettlementReceipt with
+          escrowId, seller, buyer, auditor
+          assetClass = lockedAsset.assetClass
+          assetQuantity = lockedAsset.quantity
+          currency = lockedPayment.currency
+          cashAmount = lockedPayment.amount
+          outcome = SettledDvP
+          settledAt = now
+        pure (deliveredAsset, deliveredCash, receipt)
+
+
+    -- | Atomic DvP where the PAYMENT leg is a standard Allocation created by an
+    -- external token registry (e.g. real Canton Coin / Amulet), while the asset leg
+    -- is Sup's own locked allocation. Both legs execute in one transaction.
+    --
+    -- The external allocation is bound to THIS trade before it is executed: same
+    -- settlement reference, buyer to seller, exact agreed amount and instrument.
+    choice SettleDvPExternal : (ContractId AssetToken, [ContractId Holding], ContractId SettlementReceipt)
+      with
+        lockedAssetCid : ContractId LockedAsset
+        paymentAllocationCid : ContractId Allocation
+        paymentExtraArgs : ExtraArgs
+        approvalCid : Optional (ContractId ConditionApproval)
+        settler : Party
+      controller settler
+      do
+        now <- getTime
+        assertMsg "only the seller or the buyer can settle" (settler == seller || settler == buyer)
+        assertMsg "trade has expired" (now < expiry)
+
+        lockedAsset <- fetch lockedAssetCid
+        assertMsg "asset lock belongs to another trade" (lockedAsset.escrowId == escrowId)
+        assertMsg "asset lock has the wrong parties" (lockedAsset.seller == seller && lockedAsset.buyer == buyer)
+        assertMsg "locked quantity does not match the terms" (lockedAsset.quantity == assetQuantity)
+
+        payment <- fetch paymentAllocationCid
+        let spec = (view payment).allocation
+        assertMsg "payment allocation settles a different trade" (spec.settlement.settlementRef.id == escrowId)
+        assertMsg "payment allocation must be from the buyer" (spec.transferLeg.sender == buyer)
+        assertMsg "payment allocation must pay the seller" (spec.transferLeg.receiver == seller)
+        assertMsg "payment allocation amount does not match the terms" (spec.transferLeg.amount == cashAmount)
+        assertMsg "payment instrument admin does not match the terms" (spec.transferLeg.instrumentId.admin == cashDescriptor.issuer)
+        assertMsg "payment instrument does not match the terms" (spec.transferLeg.instrumentId.id == cashDescriptor.currency)
+        assertMsg "payment allocation executor must be a principal" (spec.settlement.executor == seller || spec.settlement.executor == buyer)
+
+        checkCondition escrowId settlementAgent documentHash approvalCid
+
+        let noArgs = ExtraArgs with context = emptyChoiceContext, meta = emptyMetadata
+        assetResult <- exercise (toInterfaceContractId @Allocation lockedAssetCid) Allocation_ExecuteTransfer with extraArgs = noArgs
+        payResult <- exercise paymentAllocationCid Allocation_ExecuteTransfer with extraArgs = paymentExtraArgs
+        deliveredAsset <- case assetResult.receiverHoldingCids of
+          [h] -> pure (fromInterfaceContractId @AssetToken h)
+          _ -> abort "asset allocation must deliver exactly one holding"
+        receipt <- create SettlementReceipt with
+          escrowId, seller, buyer, auditor
+          assetClass = lockedAsset.assetClass
+          assetQuantity = lockedAsset.quantity
+          currency = cashDescriptor.currency
+          cashAmount = spec.transferLeg.amount
+          outcome = SettledDvP
+          settledAt = now
+        pure (deliveredAsset, payResult.receiverHoldingCids, receipt)
+
+    -- | Mutual cancellation. Any locked legs are returned in the same transaction.
+    choice CancelByAgreement : ContractId SettlementReceipt
+      with
+        lockedAssetCid : Optional (ContractId LockedAsset)
+        lockedPaymentCid : Optional (ContractId LockedPayment)
+      controller seller, buyer
+      do
+        now <- getTime
+        forA_ lockedAssetCid \cid -> do
+          la <- fetch cid
+          assertMsg "asset lock belongs to another trade" (la.escrowId == escrowId)
+          _ <- exercise cid ReleaseAssetTo with newOwner = seller
+          pure ()
+        forA_ lockedPaymentCid \cid -> do
+          lp <- fetch cid
+          assertMsg "payment lock belongs to another trade" (lp.escrowId == escrowId)
+          _ <- exercise cid ReleasePaymentTo with newOwner = buyer
+          pure ()
+        create SettlementReceipt with
+          escrowId, seller, buyer, auditor
+          assetClass = assetDescriptor.classId
+          assetQuantity
+          currency = cashDescriptor.currency
+          cashAmount
+          outcome = CancelledByAgreement
+          settledAt = now
+
+    -- | After expiry either party can close the trade out. Locked legs are
+    -- reclaimed separately by their depositors (see ReturnAssetOnExpiry).
+    choice CloseExpired : ContractId SettlementReceipt
+      with closer : Party
+      controller closer
+      do
+        now <- getTime
+        assertMsg "only the seller or the buyer can close this trade" (closer == seller || closer == buyer)
+        assertMsg "trade has not expired yet" (now >= expiry)
+        create SettlementReceipt with
+          escrowId, seller, buyer, auditor
+          assetClass = assetDescriptor.classId
+          assetQuantity
+          currency = cashDescriptor.currency
+          cashAmount
+          outcome = ExpiredUnsettled
+          settledAt = now
+
+-- | The seller's asset, committed to one trade.
+-- Signed by the asset issuer and the seller, so neither the seller alone nor
+-- the buyer alone can move it; observed by the buyer so delivery is verifiable.
+template LockedAsset
+  with
+    escrowId : Text
+    assetIssuer : Party
+    seller : Party
+    buyer : Party
+    assetClass : Text
+    quantity : Decimal
+    metadataHash : Text
+    expiry : Time
+    lockedAt : Time
+  where
+    signatory assetIssuer, seller
+    observer buyer
+
+    ensure quantity > 0.0
+
+    -- A locked Holding: owned by the seller, locked by both principals until the
+    -- escrow's expiry. Standard wallets render it as a locked balance.
+    interface instance Holding for LockedAsset where
+      view = HoldingView with
+        owner = seller
+        instrumentId = InstrumentId with admin = assetIssuer, id = assetClass
+        amount = quantity
+        lock = Some Lock with
+          holders = [seller, buyer]
+          expiresAt = Some expiry
+          expiresAfter = None
+          context = Some ("Sup escrow " <> escrowId)
+        meta = Metadata with values = TextMap.fromList [("sup.escrowId", escrowId)]
+
+    -- The same contract is the asset leg of a standard settlement Allocation.
+    -- `SettleDvP` settles a trade by executing the two legs' allocations.
+    interface instance Allocation for LockedAsset where
+      view = AllocationView with
+        allocation = AllocationSpecification with
+          settlement = SettlementInfo with
+            executor = seller
+            settlementRef = Reference with id = escrowId, cid = None
+            requestedAt = lockedAt
+            allocateBefore = expiry
+            settleBefore = expiry
+            meta = emptyMetadata
+          transferLegId = "asset"
+          transferLeg = TransferLeg with
+            sender = seller
+            receiver = buyer
+            amount = quantity
+            instrumentId = InstrumentId with admin = assetIssuer, id = assetClass
+            meta = emptyMetadata
+        holdingCids = []
+        meta = emptyMetadata
+
+      allocation_executeTransferImpl _self _arg = do
+        now <- getTime
+        assertMsg "trade has expired" (now < expiry)
+        delivered <- create AssetToken with
+          issuer = assetIssuer, owner = buyer, assetClass, quantity, metadataHash
+        pure Allocation_ExecuteTransferResult with
+          senderHoldingCids = []
+          receiverHoldingCids = [toInterfaceContractId @Holding delivered]
+          meta = emptyMetadata
+
+      allocation_cancelImpl _self _arg = do
+        returned <- create AssetToken with
+          issuer = assetIssuer, owner = seller, assetClass, quantity, metadataHash
+        pure Allocation_CancelResult with
+          senderHoldingCids = [toInterfaceContractId @Holding returned]
+          meta = emptyMetadata
+
+      -- A standard Withdraw is a sender-only exit. Sup's lock is binding until
+      -- expiry, so it is only honoured once the trade has expired.
+      allocation_withdrawImpl _self _arg = do
+        now <- getTime
+        assertMsg "the lock is binding until the trade expires" (now >= expiry)
+        returned <- create AssetToken with
+          issuer = assetIssuer, owner = seller, assetClass, quantity, metadataHash
+        pure Allocation_WithdrawResult with
+          senderHoldingCids = [toInterfaceContractId @Holding returned]
+          meta = emptyMetadata
+
+    -- Requires BOTH principals: reachable from SettleDvP / CancelByAgreement,
+    -- which carry the EscrowTrade's authority. A unilateral release is impossible.
+    choice ReleaseAssetTo : ContractId AssetToken
+      with newOwner : Party
+      controller seller, buyer
+      do
+        assertMsg "asset can only be released to the buyer or back to the seller"
+          (newOwner == buyer || newOwner == seller)
+        create AssetToken with
+          issuer = assetIssuer
+          owner = newOwner
+          assetClass, quantity, metadataHash
+
+    -- After expiry the seller reclaims unilaterally; no trust in the buyer needed.
+    choice ReturnAssetOnExpiry : ContractId AssetToken
+      controller seller
+      do
+        now <- getTime
+        assertMsg "trade has not expired yet" (now >= expiry)
+        create AssetToken with
+          issuer = assetIssuer
+          owner = seller
+          assetClass, quantity, metadataHash
+
+-- | The buyer's payment, committed to one trade.
+template LockedPayment
+  with
+    escrowId : Text
+    cashIssuer : Party
+    buyer : Party
+    seller : Party
+    currency : Text
+    amount : Decimal
+    expiry : Time
+    lockedAt : Time
+  where
+    signatory cashIssuer, buyer
+    observer seller
+
+    ensure amount > 0.0
+
+    interface instance Holding for LockedPayment where
+      view = HoldingView with
+        owner = buyer
+        instrumentId = InstrumentId with admin = cashIssuer, id = currency
+        amount
+        lock = Some Lock with
+          holders = [seller, buyer]
+          expiresAt = Some expiry
+          expiresAfter = None
+          context = Some ("Sup escrow " <> escrowId)
+        meta = Metadata with values = TextMap.fromList [("sup.escrowId", escrowId)]
+
+    interface instance Allocation for LockedPayment where
+      view = AllocationView with
+        allocation = AllocationSpecification with
+          settlement = SettlementInfo with
+            executor = seller
+            settlementRef = Reference with id = escrowId, cid = None
+            requestedAt = lockedAt
+            allocateBefore = expiry
+            settleBefore = expiry
+            meta = emptyMetadata
+          transferLegId = "payment"
+          transferLeg = TransferLeg with
+            sender = buyer
+            receiver = seller
+            amount
+            instrumentId = InstrumentId with admin = cashIssuer, id = currency
+            meta = emptyMetadata
+        holdingCids = []
+        meta = emptyMetadata
+
+      allocation_executeTransferImpl _self _arg = do
+        now <- getTime
+        assertMsg "trade has expired" (now < expiry)
+        delivered <- create CashToken with
+          issuer = cashIssuer, owner = seller, currency, amount
+        pure Allocation_ExecuteTransferResult with
+          senderHoldingCids = []
+          receiverHoldingCids = [toInterfaceContractId @Holding delivered]
+          meta = emptyMetadata
+
+      allocation_cancelImpl _self _arg = do
+        returned <- create CashToken with
+          issuer = cashIssuer, owner = buyer, currency, amount
+        pure Allocation_CancelResult with
+          senderHoldingCids = [toInterfaceContractId @Holding returned]
+          meta = emptyMetadata
+
+      allocation_withdrawImpl _self _arg = do
+        now <- getTime
+        assertMsg "the lock is binding until the trade expires" (now >= expiry)
+        returned <- create CashToken with
+          issuer = cashIssuer, owner = buyer, currency, amount
+        pure Allocation_WithdrawResult with
+          senderHoldingCids = [toInterfaceContractId @Holding returned]
+          meta = emptyMetadata
+
+    choice ReleasePaymentTo : ContractId CashToken
+      with newOwner : Party
+      controller seller, buyer
+      do
+        assertMsg "payment can only be released to the seller or back to the buyer"
+          (newOwner == seller || newOwner == buyer)
+        create CashToken with
+          issuer = cashIssuer
+          owner = newOwner
+          currency, amount
+
+    choice ReturnPaymentOnExpiry : ContractId CashToken
+      controller buyer
+      do
+        now <- getTime
+        assertMsg "trade has not expired yet" (now >= expiry)
+        create CashToken with
+          issuer = cashIssuer
+          owner = buyer
+          currency, amount
+
+-- | Minimal disclosure to the settlement agent: a trade reference and the
+-- document hash it must check. No price, no asset, no quantity.
+template ConditionRequest
+  with
+    escrowId : Text
+    seller : Party
+    buyer : Party
+    settlementAgent : Party
+    documentHash : Text
+    requestedAt : Time
+    expiry : Time
+  where
+    signatory seller, buyer
+    observer settlementAgent
+
+    choice ApproveCondition : ContractId ConditionApproval
+      controller settlementAgent
+      do
+        now <- getTime
+        assertMsg "trade has expired" (now < expiry)
+        create ConditionApproval with
+          escrowId, seller, buyer, settlementAgent, documentHash
+          approvedAt = now
+
+    choice RejectCondition : ContractId ConditionRejection
+      with reason : Text
+      controller settlementAgent
+      do
+        now <- getTime
+        create ConditionRejection with
+          escrowId, seller, buyer, settlementAgent, documentHash, reason
+          rejectedAt = now
+
+template ConditionApproval
+  with
+    escrowId : Text
+    seller : Party
+    buyer : Party
+    settlementAgent : Party
+    documentHash : Text
+    approvedAt : Time
+  where
+    signatory settlementAgent
+    observer seller, buyer
+
+template ConditionRejection
+  with
+    escrowId : Text
+    seller : Party
+    buyer : Party
+    settlementAgent : Party
+    documentHash : Text
+    reason : Text
+    rejectedAt : Time
+  where
+    signatory settlementAgent
+    observer seller, buyer
+
+-- | Immutable record of how a trade ended.
+template SettlementReceipt
+  with
+    escrowId : Text
+    seller : Party
+    buyer : Party
+    auditor : Optional Party
+    assetClass : Text
+    assetQuantity : Decimal
+    currency : Text
+    cashAmount : Decimal
+    outcome : TerminalOutcome
+    settledAt : Time
+  where
+    signatory seller, buyer
+    observer optionalToList auditor
