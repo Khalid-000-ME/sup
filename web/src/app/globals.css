@@ -1,0 +1,414 @@
+@import "tailwindcss";
+
+/*
+ * Sup design tokens.
+ *
+ * Dark, flat-leaning base (writemate reference) with a single violet accent and
+ * layered depth (evervault reference). One accent for the whole product; one
+ * radius system; 4px grid. Numbers always mono.
+ */
+:root {
+  color-scheme: dark;
+
+  /* surfaces: progressively lighter = higher elevation */
+  --bg: #08080c;
+  --surface-1: #0d0e14;
+  --surface-2: #13141c;
+  --surface-3: #191b25;
+  --line: #22242f;
+  --line-strong: #2f3240;
+
+  /* ink */
+  --text: #f4f4f6;
+  --text-2: #b3b5c0;
+  --muted: #7c7f8d;
+
+  /* single accent (evervault) */
+  --accent: #8e64ff;
+  --accent-soft: #bea7ff;
+  --accent-ink: #0b0716;
+
+  /* status: reserved, never used as series colors */
+  --ok: #3ddc97;
+  --warn: #e0a33c;
+  --bad: #f2555a;
+
+  /* categorical series, validated for the dark surface */
+  --c-blue: #3987e5;
+  --c-aqua: #199e70;
+  --c-violet: #9085e9;
+  --c-amber: #c98500;
+  --c-rose: #d55181;
+  --c-red: #e66767;
+
+  /* one radius system */
+  --r-sm: 0;
+  --r-md: 0;
+  --r-lg: 0;
+  --r-pill: 0;
+
+  /* elevation, tinted to the background hue (never pure black) */
+  --e-1: 0 1px 2px rgba(5, 5, 10, 0.5);
+  --e-2: 0 4px 16px rgba(5, 5, 10, 0.55);
+  --e-3: 0 18px 48px rgba(5, 5, 10, 0.7);
+
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Back-compat aliases for the original Sup workspace, which was built
+     against the previous token names. New code should use the names above. */
+  --bg-2: var(--surface-1);
+  --panel: var(--surface-1);
+  --panel-2: var(--surface-2);
+  --line-2: var(--line-strong);
+  --text-2: var(--text-2-value);
+  --veil: var(--accent);
+  --veil-2: var(--accent-soft);
+}
+
+/* --text-2 is both a new and a legacy name; define the value once. */
+:root {
+  --text-2-value: #b3b5c0;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-s1: var(--surface-1);
+  --color-s2: var(--surface-2);
+  --color-s3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line2: var(--line-strong);
+  --color-line-strong: var(--line-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-ink: var(--text);
+  --color-ink2: var(--text-2);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-veil: var(--accent);
+  --color-panel: var(--surface-1);
+  --color-panel2: var(--surface-2);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --font-sans: var(--nf-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--nf-display), ui-sans-serif, system-ui, sans-serif;
+  --font-pixel: var(--nf-pixel), var(--nf-mono), monospace;
+  --font-mono: var(--nf-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* every number is mono and tabular */
+.tabular,
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--text);
+}
+
+/* ---------- primitives ---------- */
+
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+.card-2 {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 150ms var(--ease), border-color 150ms var(--ease), transform 100ms var(--ease);
+}
+.btn:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: #3b3e4e;
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn:disabled {
+  color: var(--muted);
+  border-color: var(--line);
+  background: var(--surface-1);
+  cursor: not-allowed;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.btn-primary:hover:not(:disabled) {
+  background: #9d78ff;
+  border-color: #9d78ff;
+}
+.btn-primary:disabled {
+  background: color-mix(in srgb, var(--accent) 30%, var(--surface-1));
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.btn-light {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #08080c;
+}
+.btn-light:hover:not(:disabled) {
+  background: #e9eaf2;
+  border-color: #e9eaf2;
+}
+
+.btn-ok {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #04150f;
+}
+.btn-ok:hover:not(:disabled) {
+  background: #58e6ae;
+  border-color: #58e6ae;
+}
+
+.btn-sm {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.input {
+  height: 40px;
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: 0 12px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+}
+.input::placeholder {
+  color: var(--muted);
+}
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: var(--r-pill);
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--line-strong);
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+
+.hairline {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: var(--r-pill);
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- motion ---------- */
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+.flow {
+  stroke-dasharray: 4 8;
+  animation: flow 0.9s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, #3f67c9 10%, transparent) 0%,
+    color-mix(in srgb, #d6b6e6 28%, transparent) 50%,
+    color-mix(in srgb, #3f67c9 10%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.2s linear infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+.pulse-ring {
+  animation: pulse-ring 1.8s ease-out infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+.blink {
+  animation: blink 1.6s ease-in-out infinite;
+}
+
+/* skeleton that matches the shape of what is loading */
+@keyframes skeleton {
+  50% {
+    opacity: 0.45;
+  }
+}
+.skeleton {
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow,
+  .shimmer,
+  .pulse-ring,
+  .blink,
+  .skeleton {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ---------- landing reveals ----------
+ * Content is visible by default. Motion is a progressive enhancement driven by
+ * CSS scroll timelines, so a failed hydration can never leave a blank section.
+ */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* on-load entrance for above-the-fold content */
+  .rise {
+    animation: rise-in 0.7s var(--ease) both;
+  }
+
+  /* scroll-driven entrance for everything below */
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: rise-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+  }
+}
+
+/* ---------- film grain ----------
+ * Fixed and pointer-events-none so it never repaints on scroll.
+ */
+.grain {
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grain {
+    display: none;
+  }
+}
+
+/* ---------- corners ----------
+ * Cards, panels, inputs, modals and action buttons are square. Chips, pills, tabs and anything
+ * that opts in with Tailwind's `rounded-full` (avatars, dots, ticks, nav bars) are round.
+ */
+*:not([class*="rounded-full"]),
+*::before,
+*::after {
+  border-radius: 0 !important;
+}
+.chip,
+.round {
+  border-radius: 9999px !important;
+}
