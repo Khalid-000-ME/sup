@@ -1,0 +1,130 @@
+-- | Settlement where the PAYMENT leg is an allocation from an external registry.
+module ExternalSettleTest where
+
+import Daml.Script
+import DA.Time
+import DA.Optional (isNone)
+import Splice.Api.Token.AllocationV1
+import Splice.Api.Token.HoldingV1
+import Splice.Api.Token.MetadataV1
+import Sup.Escrow
+import Sup.Types
+import MockRegistry
+import SupTest
+
+noArgs : ExtraArgs
+noArgs = ExtraArgs with context = emptyChoiceContext, meta = emptyMetadata
+
+data Ext = Ext with
+  w : World
+  registry : Party
+  escrow : ContractId EscrowTrade
+  locked : ContractId LockedAsset
+  condReq : Optional (ContractId ConditionRequest)
+
+-- | A trade priced in the external registry's instrument "MOCKCC".
+extSetup : Bool -> Script Ext
+extSetup withAgent = do
+  w <- setup
+  registry <- allocatePartyByHint (PartyIdHint "ExternalRegistry")
+  asset <- mintAsset w w.seller 100.0
+  prop <- submit w.seller do
+    createCmd TradeProposal with
+      escrowId = "TRADE-001", seller = w.seller, buyer = w.buyer
+      settlementAgent = if withAgent then Some w.agent else None
+      auditor = None
+      assetDescriptor = AssetDescriptor with issuer = w.assetIssuer, symbol = "BOND", classId = "BOND-2031"
+      assetQuantity = 100.0
+      cashDescriptor = CashDescriptor with issuer = registry, currency = "MOCKCC"
+      cashAmount = 98500.0
+      documentHash = if withAgent then Some "DOC-8841" else None
+      expiry = addRelTime w.t0 (hours 24)
+      proposedAt = w.t0
+  (escrow, condReq) <- submit w.buyer do exerciseCmd prop AcceptTrade
+  locked <- submit w.seller do exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = asset
+  pure Ext with w, registry, escrow, locked, condReq
+
+mkAlloc : Ext -> Party -> Party -> Decimal -> Text -> Text -> Party -> Script (ContractId Allocation)
+mkAlloc e sender receiver amount instrument ref admin = do
+  cid <- submit (actAs [e.registry, sender]) do
+    createCmd MockAllocation with
+      registry = e.registry, sender, receiver, executor = e.w.seller
+      amount, instrument, ref, legId = "payment", admin
+  pure (toInterfaceContractId @Allocation cid)
+
+goodAlloc : Ext -> Script (ContractId Allocation)
+goodAlloc e = mkAlloc e e.w.buyer e.w.seller 98500.0 "MOCKCC" "TRADE-001" e.registry
+
+-- | Happy path: both legs execute in one transaction.
+externalSettles : Script ()
+externalSettles = script do
+  e <- extSetup False
+  alloc <- goodAlloc e
+  (deliveredAsset, cashHoldings, receipt) <- submit (actAs [e.w.seller, e.w.buyer]) do
+    exerciseCmd e.escrow SettleDvPExternal with
+      lockedAssetCid = e.locked, paymentAllocationCid = alloc, paymentExtraArgs = noArgs
+      approvalCid = None, settler = e.w.buyer
+  a <- queryContractId e.w.buyer deliveredAsset
+  assertMsg "buyer received the asset" (fmap (.quantity) a == Some 100.0)
+  assertMsg "exactly one payment holding delivered" (length cashHoldings == 1)
+  sh <- queryInterface @Holding e.w.seller
+  assertMsg "seller received the external instrument" ([(v.amount, v.instrumentId.id) | (_, Some v) <- sh, v.owner == e.w.seller] == [(98500.0, "MOCKCC")])
+  r <- queryContractId e.w.seller receipt
+  assertMsg "receipt records settlement in MOCKCC" (fmap (.currency) r == Some "MOCKCC")
+  assertMsg "escrow consumed" . isNone =<< queryContractId e.w.seller e.escrow
+  assertMsg "asset lock consumed" . isNone =<< queryContractId e.w.seller e.locked
+  assertMsg "external allocation consumed" . isNone =<< queryContractId e.w.seller (coerceContractId alloc : ContractId MockAllocation)
+
+-- | The external allocation must really be for THIS trade, parties, amount and instrument.
+externalBinding : Script ()
+externalBinding = script do
+  e <- extSetup False
+  let w = e.w
+  let tryIt alloc = submitMustFail (actAs [w.seller, w.buyer]) do
+        exerciseCmd e.escrow SettleDvPExternal with
+          lockedAssetCid = e.locked, paymentAllocationCid = alloc, paymentExtraArgs = noArgs
+          approvalCid = None, settler = w.buyer
+  tryIt =<< mkAlloc e w.buyer w.seller 98500.0 "MOCKCC" "TRADE-OTHER" e.registry   -- wrong settlement ref
+  tryIt =<< mkAlloc e w.buyer w.seller 1.0 "MOCKCC" "TRADE-001" e.registry          -- wrong amount
+  tryIt =<< mkAlloc e w.buyer w.seller 98500.0 "OTHERCC" "TRADE-001" e.registry     -- wrong instrument id
+  fake <- allocatePartyByHint (PartyIdHint "FakeAdmin")
+  tryIt =<< mkAlloc e w.buyer w.seller 98500.0 "MOCKCC" "TRADE-001" fake            -- wrong instrument admin
+  tryIt =<< mkAlloc e w.outsider w.seller 98500.0 "MOCKCC" "TRADE-001" e.registry   -- wrong sender
+  tryIt =<< mkAlloc e w.buyer w.outsider 98500.0 "MOCKCC" "TRADE-001" e.registry    -- wrong receiver
+  -- an outsider cannot settle even with a correct allocation
+  good <- goodAlloc e
+  submitMustFail (actAs [w.outsider]) do
+    exerciseCmd e.escrow SettleDvPExternal with
+      lockedAssetCid = e.locked, paymentAllocationCid = good, paymentExtraArgs = noArgs
+      approvalCid = None, settler = w.outsider
+  -- (Either principal may trigger settlement: both signed the EscrowTrade, and the
+  -- outcome is fixed by the agreed terms, so there is nothing to redirect.)
+  -- and the correct one still works afterwards (nothing was consumed by the failures)
+  _ <- submit (actAs [w.seller, w.buyer]) do
+    exerciseCmd e.escrow SettleDvPExternal with
+      lockedAssetCid = e.locked, paymentAllocationCid = good, paymentExtraArgs = noArgs
+      approvalCid = None, settler = w.buyer
+  pure ()
+
+-- | The settlement-agent condition still gates external settlement.
+externalNeedsApproval : Script ()
+externalNeedsApproval = script do
+  e <- extSetup True
+  let w = e.w
+  alloc <- goodAlloc e
+  submitMustFail (actAs [w.seller, w.buyer]) do
+    exerciseCmd e.escrow SettleDvPExternal with
+      lockedAssetCid = e.locked, paymentAllocationCid = alloc, paymentExtraArgs = noArgs
+      approvalCid = None, settler = w.buyer
+  case e.condReq of
+    Some req -> do
+      approval <- submit w.agent do exerciseCmd req ApproveCondition
+      -- the agent cannot see the external payment allocation or the locked asset
+      agentAllocs <- queryInterface @Allocation w.agent
+      assertMsg "agent cannot see the allocation" (null agentAllocs)
+      _ <- submit (actAs [w.seller, w.buyer]) do
+        exerciseCmd e.escrow SettleDvPExternal with
+          lockedAssetCid = e.locked, paymentAllocationCid = alloc, paymentExtraArgs = noArgs
+          approvalCid = Some approval, settler = w.seller
+      pure ()
+    None -> abort "expected a condition request"

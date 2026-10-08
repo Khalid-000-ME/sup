@@ -1,0 +1,355 @@
+module SupTest where
+
+import Daml.Script
+import DA.Time
+import DA.Optional (isNone, isSome)
+import Sup.Assets
+import Sup.Escrow
+import Sup.Types
+
+data World = World with
+  assetIssuer : Party
+  cashIssuer : Party
+  seller : Party
+  buyer : Party
+  agent : Party
+  auditor : Party
+  outsider : Party
+  sellerCustody : ContractId Custody
+  buyerCustody : ContractId Custody
+  t0 : Time
+
+openCustody : Party -> Party -> Script (ContractId Custody)
+openCustody issuer owner = do
+  inv <- submit issuer do createCmd CustodyInvite with issuer, owner
+  submit owner do exerciseCmd inv AcceptCustody
+
+setup : Script World
+setup = do
+  assetIssuer <- allocatePartyByHint (PartyIdHint "AssetIssuer")
+  cashIssuer <- allocatePartyByHint (PartyIdHint "CashIssuer")
+  seller <- allocatePartyByHint (PartyIdHint "SellerFund")
+  buyer <- allocatePartyByHint (PartyIdHint "BuyerTreasury")
+  agent <- allocatePartyByHint (PartyIdHint "AdminCo")
+  auditor <- allocatePartyByHint (PartyIdHint "AuditCo")
+  outsider <- allocatePartyByHint (PartyIdHint "OutsideObserver")
+  sellerCustody <- openCustody assetIssuer seller
+  buyerCustody <- openCustody cashIssuer buyer
+  t0 <- getTime
+  pure World with ..
+
+mintAsset : World -> Party -> Decimal -> Script (ContractId AssetToken)
+mintAsset w owner quantity = submit w.assetIssuer do
+  createCmd AssetToken with
+    issuer = w.assetIssuer, owner, assetClass = "BOND-2031", quantity, metadataHash = "ISIN-TEST-0001"
+
+mintCash : World -> Party -> Decimal -> Script (ContractId CashToken)
+mintCash w owner amount = submit w.cashIssuer do
+  createCmd CashToken with issuer = w.cashIssuer, owner, currency = "CashUSD", amount
+
+descriptors : World -> (AssetDescriptor, CashDescriptor)
+descriptors w =
+  ( AssetDescriptor with issuer = w.assetIssuer, symbol = "BOND", classId = "BOND-2031"
+  , CashDescriptor with issuer = w.cashIssuer, currency = "CashUSD" )
+
+-- | Standard proposal: 100 units for 98,500, agent-gated on a document hash.
+propose : World -> Optional Party -> Optional Text -> Script (ContractId TradeProposal)
+propose w agent docHash = do
+  let (ad, cd) = descriptors w
+  submit w.seller do
+    createCmd TradeProposal with
+      escrowId = "TRADE-001"
+      seller = w.seller
+      buyer = w.buyer
+      settlementAgent = agent
+      auditor = Some w.auditor
+      assetDescriptor = ad
+      assetQuantity = 100.0
+      cashDescriptor = cd
+      cashAmount = 98500.0
+      documentHash = docHash
+      expiry = addRelTime w.t0 (hours 24)
+      proposedAt = w.t0
+
+-- | PRD 21.3 — full end-to-end scenario with a settlement agent.
+scenarioSettle : Script ()
+scenarioSettle = script do
+  w <- setup
+  asset <- mintAsset w w.seller 150.0
+  cash <- mintCash w w.buyer 100000.0
+
+  prop <- propose w (Some w.agent) (Some "DOC-8841")
+  assertMsg "outsider cannot see the proposal" . isNone =<< queryContractId w.outsider prop
+  assertMsg "agent cannot see the proposal" . isNone =<< queryContractId w.agent prop
+  assertMsg "buyer can see the proposal" . isSome =<< queryContractId w.buyer prop
+
+  (escrow, Some condReq) <- submit w.buyer do exerciseCmd prop AcceptTrade
+
+  -- PRIVACY: the agent sees only the condition request, never the trade terms.
+  assertMsg "agent cannot see the escrow trade" . isNone =<< queryContractId w.agent escrow
+  assertMsg "agent sees the condition request" . isSome =<< queryContractId w.agent condReq
+  assertMsg "outsider cannot see the escrow" . isNone =<< queryContractId w.outsider escrow
+  assertMsg "outsider cannot see the condition request" . isNone =<< queryContractId w.outsider condReq
+  assertMsg "auditor sees the escrow" . isSome =<< queryContractId w.auditor escrow
+  assertMsg "auditor cannot see the condition request" . isNone =<< queryContractId w.auditor condReq
+
+  -- Lock both legs.
+  locked <- submit w.seller do
+    exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = asset
+  paid <- submit w.buyer do
+    exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = cash
+
+  -- Change returned to each depositor.
+  sellerAssets <- query @AssetToken w.seller
+  assertMsg "seller keeps 50 units of change" (map (\(_, a) -> a.quantity) sellerAssets == [50.0])
+  buyerCash <- query @CashToken w.buyer
+  assertMsg "buyer keeps 1,500 change" (map (\(_, c) -> c.amount) buyerCash == [1500.0])
+
+  -- PRIVACY: locks are not disclosed to the agent, the auditor or outsiders.
+  assertMsg "agent cannot see the asset lock" . isNone =<< queryContractId w.agent locked
+  assertMsg "agent cannot see the payment lock" . isNone =<< queryContractId w.agent paid
+  assertMsg "auditor cannot see the asset lock" . isNone =<< queryContractId w.auditor locked
+  assertMsg "outsider cannot see the payment lock" . isNone =<< queryContractId w.outsider paid
+  assertMsg "buyer sees the asset lock" . isSome =<< queryContractId w.buyer locked
+  assertMsg "seller sees the payment lock" . isSome =<< queryContractId w.seller paid
+
+  -- Settlement is blocked until the condition is approved.
+  submitMustFail w.seller do
+    exerciseCmd escrow SettleDvP with
+      lockedAssetCid = locked, lockedPaymentCid = paid, approvalCid = None, settler = w.seller
+
+  approval <- submit w.agent do exerciseCmd condReq ApproveCondition
+  assertMsg "seller sees the approval" . isSome =<< queryContractId w.seller approval
+
+  -- Atomic DvP.
+  (deliveredAsset, deliveredCash, receipt) <- submit w.buyer do
+    exerciseCmd escrow SettleDvP with
+      lockedAssetCid = locked, lockedPaymentCid = paid, approvalCid = Some approval, settler = w.buyer
+
+  da <- queryContractId w.buyer deliveredAsset
+  assertMsg "buyer received 100 units" (fmap (.quantity) da == Some 100.0)
+  dc <- queryContractId w.seller deliveredCash
+  assertMsg "seller received 98,500" (fmap (.amount) dc == Some 98500.0)
+  assertMsg "escrow consumed" . isNone =<< queryContractId w.seller escrow
+  assertMsg "asset lock consumed" . isNone =<< queryContractId w.seller locked
+  assertMsg "payment lock consumed" . isNone =<< queryContractId w.buyer paid
+  r <- queryContractId w.seller receipt
+  assertMsg "receipt records settlement" (fmap (.outcome) r == Some SettledDvP)
+  assertMsg "auditor sees the receipt" . isSome =<< queryContractId w.auditor receipt
+  assertMsg "outsider cannot see the receipt" . isNone =<< queryContractId w.outsider receipt
+
+  -- No double settlement.
+  submitMustFail w.buyer do
+    exerciseCmd escrow SettleDvP with
+      lockedAssetCid = locked, lockedPaymentCid = paid, approvalCid = Some approval, settler = w.buyer
+
+-- | No settlement agent configured: settles as soon as both legs are locked.
+scenarioNoCondition : Script ()
+scenarioNoCondition = script do
+  w <- setup
+  asset <- mintAsset w w.seller 100.0
+  cash <- mintCash w w.buyer 98500.0
+  prop <- propose w None None
+  (escrow, req) <- submit w.buyer do exerciseCmd prop AcceptTrade
+  assertMsg "no condition request is raised" (isNone req)
+  locked <- submit w.seller do exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = asset
+  paid <- submit w.buyer do exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = cash
+  (_, _, receipt) <- submit w.seller do
+    exerciseCmd escrow SettleDvP with
+      lockedAssetCid = locked, lockedPaymentCid = paid, approvalCid = None, settler = w.seller
+  r <- queryContractId w.buyer receipt
+  assertMsg "settled" (fmap (.outcome) r == Some SettledDvP)
+
+-- | PRD 21.4 — buyer locks, seller never does, expiry returns the payment.
+scenarioExpiry : Script ()
+scenarioExpiry = script do
+  w <- setup
+  cash <- mintCash w w.buyer 98500.0
+  prop <- propose w None None
+  (escrow, _) <- submit w.buyer do exerciseCmd prop AcceptTrade
+  paid <- submit w.buyer do exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = cash
+
+  -- Cannot reclaim before expiry.
+  submitMustFail w.buyer do exerciseCmd paid ReturnPaymentOnExpiry
+  submitMustFail w.buyer do exerciseCmd escrow CloseExpired with closer = w.buyer
+
+  passTime (hours 25)
+  returned <- submit w.buyer do exerciseCmd paid ReturnPaymentOnExpiry
+  rc <- queryContractId w.buyer returned
+  assertMsg "buyer got the full payment back" (fmap (.amount) rc == Some 98500.0)
+  receipt <- submit w.buyer do exerciseCmd escrow CloseExpired with closer = w.buyer
+  r <- queryContractId w.seller receipt
+  assertMsg "receipt records expiry" (fmap (.outcome) r == Some ExpiredUnsettled)
+  -- The seller never received the buyer's cash.
+  sellerCash <- query @CashToken w.seller
+  assertMsg "seller received nothing" (null sellerCash)
+
+-- | Mutual cancellation returns both legs in one transaction.
+scenarioCancel : Script ()
+scenarioCancel = script do
+  w <- setup
+  asset <- mintAsset w w.seller 100.0
+  cash <- mintCash w w.buyer 98500.0
+  prop <- propose w None None
+  (escrow, _) <- submit w.buyer do exerciseCmd prop AcceptTrade
+  locked <- submit w.seller do exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = asset
+  paid <- submit w.buyer do exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = cash
+
+  -- One party alone cannot cancel.
+  submitMustFail w.seller do
+    exerciseCmd escrow CancelByAgreement with lockedAssetCid = Some locked, lockedPaymentCid = Some paid
+
+  receipt <- submit (actAs [w.seller, w.buyer]) do
+    exerciseCmd escrow CancelByAgreement with lockedAssetCid = Some locked, lockedPaymentCid = Some paid
+  r <- queryContractId w.seller receipt
+  assertMsg "receipt records cancellation" (fmap (.outcome) r == Some CancelledByAgreement)
+  sa <- query @AssetToken w.seller
+  assertMsg "seller has the asset back" (map (\(_, a) -> a.quantity) sa == [100.0])
+  bc <- query @CashToken w.buyer
+  assertMsg "buyer has the cash back" (map (\(_, c) -> c.amount) bc == [98500.0])
+
+-- | A rejected condition blocks settlement.
+scenarioRejected : Script ()
+scenarioRejected = script do
+  w <- setup
+  asset <- mintAsset w w.seller 100.0
+  cash <- mintCash w w.buyer 98500.0
+  prop <- propose w (Some w.agent) (Some "DOC-8841")
+  (escrow, Some condReq) <- submit w.buyer do exerciseCmd prop AcceptTrade
+  locked <- submit w.seller do exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = asset
+  paid <- submit w.buyer do exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = cash
+  rej <- submit w.agent do exerciseCmd condReq RejectCondition with reason = "delivery reference not found"
+  assertMsg "seller sees the rejection" . isSome =<< queryContractId w.seller rej
+  -- The approval contract never existed, so settlement cannot proceed.
+  submitMustFail w.seller do
+    exerciseCmd escrow SettleDvP with
+      lockedAssetCid = locked, lockedPaymentCid = paid, approvalCid = None, settler = w.seller
+  -- Parties unwind by agreement.
+  _ <- submit (actAs [w.seller, w.buyer]) do
+    exerciseCmd escrow CancelByAgreement with lockedAssetCid = Some locked, lockedPaymentCid = Some paid
+  pure ()
+
+-- | PRD 21.1 negative cases.
+negatives : Script ()
+negatives = script do
+  w <- setup
+  asset <- mintAsset w w.seller 150.0
+  small <- mintAsset w w.seller 10.0
+  cash <- mintCash w w.buyer 100000.0
+  lowCash <- mintCash w w.buyer 10.0
+  let (ad, cd) = descriptors w
+
+  -- zero quantity / zero price are rejected by `ensure`
+  submitMustFail w.seller do
+    createCmd TradeProposal with
+      escrowId = "BAD", seller = w.seller, buyer = w.buyer, settlementAgent = None, auditor = None
+      assetDescriptor = ad, assetQuantity = 0.0, cashDescriptor = cd, cashAmount = 98500.0
+      documentHash = None, expiry = addRelTime w.t0 (hours 24), proposedAt = w.t0
+  submitMustFail w.seller do
+    createCmd TradeProposal with
+      escrowId = "BAD", seller = w.seller, buyer = w.buyer, settlementAgent = None, auditor = None
+      assetDescriptor = ad, assetQuantity = 100.0, cashDescriptor = cd, cashAmount = 0.0
+      documentHash = None, expiry = addRelTime w.t0 (hours 24), proposedAt = w.t0
+
+  prop <- propose w (Some w.agent) (Some "DOC-8841")
+  -- only the buyer may accept
+  submitMustFail w.outsider do exerciseCmd prop AcceptTrade
+  submitMustFail w.agent do exerciseCmd prop AcceptTrade
+  (escrow, Some condReq) <- submit w.buyer do exerciseCmd prop AcceptTrade
+
+  -- wrong asset class / insufficient quantity
+  wrongClass <- submit w.assetIssuer do
+    createCmd AssetToken with
+      issuer = w.assetIssuer, owner = w.seller, assetClass = "EQUITY-X", quantity = 100.0, metadataHash = "x"
+  submitMustFail w.seller do
+    exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = wrongClass
+  submitMustFail w.seller do
+    exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = small
+
+  -- buyer cannot lock the asset leg; seller cannot lock the payment leg
+  submitMustFail w.buyer do
+    exerciseCmd w.buyerCustody LockAssetLeg with escrowCid = escrow, assetCid = asset
+  submitMustFail w.seller do
+    exerciseCmd w.sellerCustody LockPaymentLeg with escrowCid = escrow, cashCid = cash
+
+  -- wrong currency / insufficient payment
+  wrongCcy <- submit w.cashIssuer do
+    createCmd CashToken with issuer = w.cashIssuer, owner = w.buyer, currency = "CashEUR", amount = 100000.0
+  submitMustFail w.buyer do
+    exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = wrongCcy
+  submitMustFail w.buyer do
+    exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = lowCash
+
+  locked <- submit w.seller do exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = asset
+
+  -- settlement with only one leg locked
+  submitMustFail w.seller do
+    exerciseCmd escrow SettleDvP with
+      lockedAssetCid = locked, lockedPaymentCid = coerceContractId locked, approvalCid = None, settler = w.seller
+
+  paid <- submit w.buyer do exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = cash
+
+  -- only the agent may approve
+  submitMustFail w.seller do exerciseCmd condReq ApproveCondition
+  submitMustFail w.buyer do exerciseCmd condReq ApproveCondition
+  submitMustFail w.outsider do exerciseCmd condReq ApproveCondition
+  approval <- submit w.agent do exerciseCmd condReq ApproveCondition
+
+  -- an outsider cannot settle
+  submitMustFail w.outsider do
+    exerciseCmd escrow SettleDvP with
+      lockedAssetCid = locked, lockedPaymentCid = paid, approvalCid = Some approval, settler = w.outsider
+  -- nor can the agent
+  submitMustFail w.agent do
+    exerciseCmd escrow SettleDvP with
+      lockedAssetCid = locked, lockedPaymentCid = paid, approvalCid = Some approval, settler = w.agent
+  -- a party cannot settle while naming someone else as the settler
+  submitMustFail w.seller do
+    exerciseCmd escrow SettleDvP with
+      lockedAssetCid = locked, lockedPaymentCid = paid, approvalCid = Some approval, settler = w.buyer
+
+  -- neither principal can unilaterally spring a locked leg
+  submitMustFail w.seller do exerciseCmd locked ReleaseAssetTo with newOwner = w.seller
+  submitMustFail w.buyer do exerciseCmd paid ReleasePaymentTo with newOwner = w.buyer
+  submitMustFail w.seller do exerciseCmd locked ReturnAssetOnExpiry
+  submitMustFail w.buyer do exerciseCmd paid ReturnPaymentOnExpiry
+
+  -- a locked leg cannot be redirected to an unrelated party
+  submitMustFail w.seller do exerciseCmd locked ReleaseAssetTo with newOwner = w.outsider
+
+  _ <- submit w.seller do
+    exerciseCmd escrow SettleDvP with
+      lockedAssetCid = locked, lockedPaymentCid = paid, approvalCid = Some approval, settler = w.seller
+  pure ()
+
+-- | An approval from a different trade cannot be reused.
+crossTradeApproval : Script ()
+crossTradeApproval = script do
+  w <- setup
+  let (ad, cd) = descriptors w
+  assetA <- mintAsset w w.seller 100.0
+  cashA <- mintCash w w.buyer 98500.0
+
+  propA <- propose w (Some w.agent) (Some "DOC-8841")
+  (escrowA, Some reqA) <- submit w.buyer do exerciseCmd propA AcceptTrade
+  approvalA <- submit w.agent do exerciseCmd reqA ApproveCondition
+
+  propB <- submit w.seller do
+    createCmd TradeProposal with
+      escrowId = "TRADE-002", seller = w.seller, buyer = w.buyer
+      settlementAgent = Some w.agent, auditor = None
+      assetDescriptor = ad, assetQuantity = 100.0, cashDescriptor = cd, cashAmount = 98500.0
+      documentHash = Some "DOC-9999", expiry = addRelTime w.t0 (hours 24), proposedAt = w.t0
+  (escrowB, _) <- submit w.buyer do exerciseCmd propB AcceptTrade
+  lockedB <- submit w.seller do exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrowB, assetCid = assetA
+  paidB <- submit w.buyer do exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrowB, cashCid = cashA
+
+  -- Trade A's approval must not settle trade B.
+  submitMustFail w.seller do
+    exerciseCmd escrowB SettleDvP with
+      lockedAssetCid = lockedB, lockedPaymentCid = paidB, approvalCid = Some approvalA, settler = w.seller
+  -- …and trade B's locks must not settle trade A.
+  submitMustFail w.seller do
+    exerciseCmd escrowA SettleDvP with
+      lockedAssetCid = lockedB, lockedPaymentCid = paidB, approvalCid = Some approvalA, settler = w.seller
+  pure ()

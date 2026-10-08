@@ -1,0 +1,152 @@
+-- | Canton Token Standard (CIP-56) conformance for Sup's tokens: everything here
+-- goes through the standard `Holding` / `Allocation` interfaces rather than
+-- Sup's own templates, i.e. what a generic wallet or explorer would do.
+module StandardTest where
+
+import Daml.Script
+import DA.Time
+import DA.Foldable (forA_)
+import DA.Optional (isNone, isSome, fromSome)
+import Splice.Api.Token.AllocationV1
+import Splice.Api.Token.HoldingV1
+import Splice.Api.Token.MetadataV1
+import Sup.Escrow
+import SupTest
+
+noArgs : ExtraArgs
+noArgs = ExtraArgs with context = emptyChoiceContext, meta = emptyMetadata
+
+-- | Assets and cash are readable as standard Holdings of the right instrument.
+standardHoldings : Script ()
+standardHoldings = script do
+  w <- setup
+  _ <- mintAsset w w.seller 150.0
+  _ <- mintCash w w.buyer 100000.0
+
+  sellerHoldings <- queryInterface @Holding w.seller
+  case [v | (_, Some v) <- sellerHoldings] of
+    [v] -> do
+      assertMsg "instrument admin is the asset issuer" (v.instrumentId.admin == w.assetIssuer)
+      assertMsg "instrument id is the asset class" (v.instrumentId.id == "BOND-2031")
+      assertMsg "amount is the quantity" (v.amount == 150.0)
+      assertMsg "owner is the seller" (v.owner == w.seller)
+      assertMsg "an unlocked holding has no lock" (isNone v.lock)
+    _ -> abort "seller should see exactly one standard holding"
+
+  buyerHoldings <- queryInterface @Holding w.buyer
+  case [v | (_, Some v) <- buyerHoldings] of
+    [v] -> do
+      assertMsg "cash instrument admin is the cash issuer" (v.instrumentId.admin == w.cashIssuer)
+      assertMsg "cash instrument id is the currency" (v.instrumentId.id == "CashUSD")
+    _ -> abort "buyer should see exactly one standard holding"
+
+  outsiderHoldings <- queryInterface @Holding w.outsider
+  assertMsg "outsider sees no holdings" (null outsiderHoldings)
+
+-- | Locked legs surface as locked Holdings and as standard Allocations.
+standardEscrowViews : Script ()
+standardEscrowViews = script do
+  w <- setup
+  asset <- mintAsset w w.seller 150.0
+  cash <- mintCash w w.buyer 100000.0
+  prop <- propose w (Some w.agent) (Some "DOC-8841")
+  (escrow, _) <- submit w.buyer do exerciseCmd prop AcceptTrade
+  _ <- submit w.seller do exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = asset
+  _ <- submit w.buyer do exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = cash
+
+  -- the seller's holdings: 50 of change (unlocked) + 100 locked
+  hs <- queryInterface @Holding w.seller
+  let owned = [v | (_, Some v) <- hs, v.owner == w.seller]
+  assertMsg "seller owns two holdings of the asset" (length owned == 2)
+  let locked = [v | v <- owned, isSome v.lock]
+  let free = [v | v <- owned, isNone v.lock]
+  assertMsg "exactly one is locked" (length locked == 1)
+  assertMsg "locked amount is the traded quantity" (map (.amount) locked == [100.0])
+  assertMsg "free amount is the change" (map (.amount) free == [50.0])
+  case locked of
+    [v] -> do
+      let l = fromSome v.lock
+      assertMsg "lock is held by both principals" (l.holders == [w.seller, w.buyer])
+      assertMsg "lock carries an expiry" (isSome l.expiresAt)
+      assertMsg "lock explains its context" (l.context == Some "Sup escrow TRADE-001")
+    _ -> abort "expected one locked holding"
+
+  -- standard Allocation views describe each leg of the settlement
+  seller <- queryInterface @Allocation w.seller
+  let legs = [v.allocation | (_, Some v) <- seller]
+  assertMsg "seller sees both settlement legs" (length legs == 2)
+  let assetLeg = [a | a <- legs, a.transferLegId == "asset"]
+  case assetLeg of
+    [a] -> do
+      assertMsg "asset leg: seller sends" (a.transferLeg.sender == w.seller)
+      assertMsg "asset leg: buyer receives" (a.transferLeg.receiver == w.buyer)
+      assertMsg "asset leg: quantity" (a.transferLeg.amount == 100.0)
+      assertMsg "asset leg: instrument" (a.transferLeg.instrumentId.id == "BOND-2031")
+      assertMsg "settlement ref is the trade id" (a.settlement.settlementRef.id == "TRADE-001")
+    _ -> abort "expected exactly one asset leg"
+  let payLeg = [a | a <- legs, a.transferLegId == "payment"]
+  case payLeg of
+    [a] -> do
+      assertMsg "payment leg: buyer sends" (a.transferLeg.sender == w.buyer)
+      assertMsg "payment leg: seller receives" (a.transferLeg.receiver == w.seller)
+      assertMsg "payment leg: amount" (a.transferLeg.amount == 98500.0)
+    _ -> abort "expected exactly one payment leg"
+
+  -- the agent / auditor / outsider see none of it through the standard interfaces either
+  forA_ [w.agent, w.auditor, w.outsider] \p -> do
+    h <- queryInterface @Holding p
+    a <- queryInterface @Allocation p
+    assertMsg "no holdings visible" (null h)
+    assertMsg "no allocations visible" (null a)
+
+-- | A standard Allocation cannot be executed or cancelled by one party alone.
+standardAllocationAuthority : Script ()
+standardAllocationAuthority = script do
+  w <- setup
+  asset <- mintAsset w w.seller 100.0
+  cash <- mintCash w w.buyer 98500.0
+  prop <- propose w None None
+  (escrow, _) <- submit w.buyer do exerciseCmd prop AcceptTrade
+  locked <- submit w.seller do exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = asset
+  paid <- submit w.buyer do exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = cash
+  let assetAlloc = toInterfaceContractId @Allocation locked
+  let payAlloc = toInterfaceContractId @Allocation paid
+
+  submitMustFail w.seller do exerciseCmd assetAlloc Allocation_ExecuteTransfer with extraArgs = noArgs
+  submitMustFail w.buyer do exerciseCmd assetAlloc Allocation_ExecuteTransfer with extraArgs = noArgs
+  submitMustFail w.outsider do exerciseCmd assetAlloc Allocation_ExecuteTransfer with extraArgs = noArgs
+  submitMustFail w.seller do exerciseCmd assetAlloc Allocation_Cancel with extraArgs = noArgs
+  submitMustFail w.buyer do exerciseCmd payAlloc Allocation_Cancel with extraArgs = noArgs
+  -- the sender's standard Withdraw is NOT an exit while the lock is binding
+  submitMustFail w.seller do exerciseCmd assetAlloc Allocation_Withdraw with extraArgs = noArgs
+  submitMustFail w.buyer do exerciseCmd payAlloc Allocation_Withdraw with extraArgs = noArgs
+
+  -- both principals together can execute a leg through the standard interface
+  res <- submit (actAs [w.seller, w.buyer]) do
+    exerciseCmd assetAlloc Allocation_ExecuteTransfer with extraArgs = noArgs
+  assertMsg "buyer receives the asset as a standard holding" (length res.receiverHoldingCids == 1)
+
+-- | After expiry the sender's standard Withdraw returns the leg; before it, it is refused.
+standardWithdrawAfterExpiry : Script ()
+standardWithdrawAfterExpiry = script do
+  w <- setup
+  asset <- mintAsset w w.seller 100.0
+  cash <- mintCash w w.buyer 98500.0
+  prop <- propose w None None
+  (escrow, _) <- submit w.buyer do exerciseCmd prop AcceptTrade
+  locked <- submit w.seller do exerciseCmd w.sellerCustody LockAssetLeg with escrowCid = escrow, assetCid = asset
+  paid <- submit w.buyer do exerciseCmd w.buyerCustody LockPaymentLeg with escrowCid = escrow, cashCid = cash
+  passTime (hours 25)
+
+  -- executing a leg after expiry is refused
+  submitMustFail (actAs [w.seller, w.buyer]) do
+    exerciseCmd (toInterfaceContractId @Allocation locked) Allocation_ExecuteTransfer with extraArgs = noArgs
+  -- but each sender can withdraw their own leg, unilaterally
+  r1 <- submit w.seller do
+    exerciseCmd (toInterfaceContractId @Allocation locked) Allocation_Withdraw with extraArgs = noArgs
+  r2 <- submit w.buyer do
+    exerciseCmd (toInterfaceContractId @Allocation paid) Allocation_Withdraw with extraArgs = noArgs
+  assertMsg "seller got the asset back" (length r1.senderHoldingCids == 1)
+  assertMsg "buyer got the cash back" (length r2.senderHoldingCids == 1)
+  sh <- queryInterface @Holding w.seller
+  assertMsg "seller holds 100 unlocked" ([v.amount | (_, Some v) <- sh, v.owner == w.seller, isNone v.lock] == [100.0])

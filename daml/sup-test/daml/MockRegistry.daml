@@ -1,0 +1,78 @@
+-- | A stand-in for an EXTERNAL token registry (like Amulet). It implements the same
+-- Canton Token Standard Allocation interface, so Sup's external settlement is
+-- exercised exactly as it would be against a real registry.
+module MockRegistry where
+
+import DA.Time (time)
+import DA.Date (date, Month(..))
+import DA.TextMap qualified as TextMap
+import Splice.Api.Token.AllocationV1
+import Splice.Api.Token.HoldingV1
+import Splice.Api.Token.MetadataV1
+
+template MockHolding
+  with
+    registry : Party
+    owner : Party
+    amount : Decimal
+    instrument : Text
+  where
+    signatory registry
+    observer owner
+    interface instance Holding for MockHolding where
+      view = HoldingView with
+        owner
+        instrumentId = InstrumentId with admin = registry, id = instrument
+        amount
+        lock = None
+        meta = Metadata with values = TextMap.empty
+
+template MockAllocation
+  with
+    registry : Party
+    sender : Party
+    receiver : Party
+    executor : Party
+    amount : Decimal
+    instrument : Text
+    ref : Text
+    legId : Text
+    admin : Party
+  where
+    signatory registry, sender
+    observer receiver, executor
+    interface instance Allocation for MockAllocation where
+      view = AllocationView with
+        allocation = AllocationSpecification with
+          settlement = SettlementInfo with
+            executor
+            settlementRef = Reference with id = ref, cid = None
+            requestedAt = time (date 2026 Oct 1) 0 0 0
+            allocateBefore = time (date 2030 Jan 1) 0 0 0
+            settleBefore = time (date 2030 Jan 1) 0 0 0
+            meta = emptyMetadata
+          transferLegId = legId
+          transferLeg = TransferLeg with
+            sender
+            receiver
+            amount
+            instrumentId = InstrumentId with admin, id = instrument
+            meta = emptyMetadata
+        holdingCids = []
+        meta = emptyMetadata
+      allocation_executeTransferImpl _self _arg = do
+        h <- create MockHolding with registry, owner = receiver, amount, instrument
+        pure Allocation_ExecuteTransferResult with
+          senderHoldingCids = []
+          receiverHoldingCids = [toInterfaceContractId @Holding h]
+          meta = emptyMetadata
+      allocation_cancelImpl _self _arg = do
+        h <- create MockHolding with registry, owner = sender, amount, instrument
+        pure Allocation_CancelResult with
+          senderHoldingCids = [toInterfaceContractId @Holding h]
+          meta = emptyMetadata
+      allocation_withdrawImpl _self _arg = do
+        h <- create MockHolding with registry, owner = sender, amount, instrument
+        pure Allocation_WithdrawResult with
+          senderHoldingCids = [toInterfaceContractId @Holding h]
+          meta = emptyMetadata
