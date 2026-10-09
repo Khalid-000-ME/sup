@@ -1,0 +1,62 @@
+{
+  "voice": "en-US-AndrewMultilingualNeural",
+  "rate": "-4%",
+  "scenes": [
+    {
+      "id": "hero",
+      "say": "When two institutions trade a bond privately, someone has to confirm the delivery before the money moves. That someone ends up seeing the whole trade. Sup fixes that. Settlement that proves delivery, without exposing the trade."
+    },
+    {
+      "id": "problem",
+      "say": "Today there are two options. On paper, the settlement agent is handed the price, the size and both names, just to check one document. On a public chain, everyone sees everything, before the trade even settles. On Sup, each party sees only its own part. The agent sees one reference, outsiders see nothing, and the bond and the payment swap in a single transaction, or not at all."
+    },
+    {
+      "id": "disclosure",
+      "say": "This table is the whole idea. The buyer and seller see the trade. The agent sees the counterparties and a fingerprint of the document, nothing else. An outsider sees nothing at all. And this isn't a setting in our app. It's written into the contract, and the Canton ledger simply never sends the rest."
+    },
+    {
+      "id": "how",
+      "say": "A trade has four steps. The seller sends a private offer to one buyer. The buyer accepts in one click, and the payment is locked in escrow. An optional agent confirms one delivery reference. Then the bond and the payment swap together, in one atomic transaction."
+    },
+    {
+      "id": "howpage",
+      "say": "Here is the same trade step by step, with what happens on the ledger and who can see it. These rules hold even if our app is bypassed. Our tests submit the forbidden action straight to the ledger, and the ledger refuses it."
+    },
+    {
+      "id": "proofpage",
+      "say": "These are real settlements on Canton DevNet. Bonds sold for real C B T C from BitSafe, and for real Canton Coin, each one a single transaction that the agent and an outsider cannot see."
+    },
+    {
+      "id": "whypage",
+      "say": "Who needs this? Bond and credit desks, fund administrators who act as settlement agents, and collateral teams. The market is huge. Twelve trillion dollars of US corporate debt, and D T C C is now tokenizing treasuries on Canton."
+    },
+    {
+      "id": "onboard",
+      "say": "To start, I sign in as the seller. The app checks my connection to the Canton ledger, for real, and my desk is ready."
+    },
+    {
+      "id": "seller",
+      "say": "Now I define what I sell. I pick a bond, set five units, and price them at one hundredth of a real C B T C from BitSafe. Then I ask an agent to confirm delivery, and send the offer."
+    },
+    {
+      "id": "buyer",
+      "say": "Over to the buyer. Open offers are ranked by price, in any currency, next to live prices and a portfolio read through the Canton Token Standard. That balance is real C B T C. One click buys, and the payment is locked by BitSafe's registry, not spent."
+    },
+    {
+      "id": "deliver",
+      "say": "Back as the seller, I deliver the bond. Now both sides are locked, and the trade waits for the agent."
+    },
+    {
+      "id": "agent",
+      "say": "The agent sees only a fingerprint. A wrong reference is rejected. The right one matches, the agent confirms, and the trade settles on its own."
+    },
+    {
+      "id": "verify",
+      "say": "One atomic transaction. The bond went to the buyer, and the C B T C went to the seller. Verify reads each step back from the node, as me. For anyone who wasn't on the trade, it doesn't exist."
+    },
+    {
+      "id": "close",
+      "say": "Sup. Private by construction. Atomic by construction. Real C B T C and Canton Coin on DevNet, open source, and ready for you to reproduce."
+    }
+  ]
+}
