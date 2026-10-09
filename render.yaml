@@ -1,0 +1,23 @@
+# Render blueprint for Sup. New, Blueprint, pick this repo, then fill the secrets when asked.
+services:
+  - type: web
+    name: sup
+    runtime: node
+    plan: free
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /start
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SUP_NETWORK
+        value: devnet
+      - key: SUP_PARTY_BASE
+        value: sup
+      - key: OIDC_USERNAME
+        sync: false
+      - key: OIDC_PASSWORD
+        sync: false
+      - key: SUP_ACCESS_CODE
+        sync: false
