@@ -1,0 +1,568 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sup Pitch Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Sup's own tokens, lifted from web/src/app/globals.css: a dark flat base, one
+     violet accent, sharp corners, numbers always mono. Laid out for print at
+     1280x720 so each slide is exactly one 16:9 PDF page. */
+  :root{
+    --bg:#08080c; --s1:#0d0e14; --s2:#13141c; --s3:#191b25;
+    --line:#22242f; --line-strong:#2f3240;
+    --text:#f4f4f6; --text-2:#b3b5c0; --muted:#7c7f8d;
+    --accent:#8e64ff; --accent-soft:#bea7ff; --accent-ink:#0b0716;
+    --ok:#3ddc97; --bad:#f2555a;
+    --disp:'Space Grotesk','Helvetica Neue',Arial,sans-serif;
+    --sans:'Bricolage Grotesque','Space Grotesk',Arial,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  @page{ size:1280px 720px; margin:0 }
+  html,body{margin:0;padding:0;background:#000}
+  body{font-family:var(--sans);-webkit-font-smoothing:antialiased;
+    print-color-adjust:exact;-webkit-print-color-adjust:exact}
+
+  .slide{position:relative;width:1280px;height:720px;overflow:hidden;background:var(--bg);color:var(--text);
+    padding:56px 72px 64px;display:flex;flex-direction:column;break-after:page;page-break-after:always}
+  .slide:last-child{break-after:auto;page-break-after:auto}
+  .slide.panel{background:var(--s1)}
+  .slide.acc{background:var(--accent);color:var(--accent-ink)}
+  .slide.cover{background:var(--bg);justify-content:center;align-items:flex-start}
+  /* On screen the deck reads as a scrollable stack; in print each slide is a page. */
+  @media screen{ body{display:flex;flex-direction:column;align-items:center;gap:20px;padding:20px 0}
+    .slide{box-shadow:0 18px 48px rgba(5,5,10,.7)} }
+
+  /* ---------- type ---------- */
+  .eyebrow{font-family:var(--mono);font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .eyebrow .n{color:var(--accent);margin-right:11px}
+  .acc .eyebrow{color:rgba(11,7,22,.7)} .acc .eyebrow .n{color:var(--accent-ink)}
+  .rule{width:56px;height:2px;background:var(--accent);margin-top:14px}
+  .acc .rule{background:var(--accent-ink)}
+  .body{flex:1 1 auto;display:flex;flex-direction:column;justify-content:center;min-height:0}
+
+  h2.h{margin:0;font-family:var(--disp);font-size:66px;font-weight:500;line-height:1;letter-spacing:-.04em;text-wrap:balance}
+  h3.h{margin:0;font-family:var(--disp);font-size:40px;font-weight:500;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
+  p.lede{margin:0;font-size:23px;line-height:1.4;max-width:40ch;color:var(--text-2)}
+  .acc p.lede{color:rgba(11,7,22,.82)}
+  .src{font-family:var(--mono);font-size:12px;color:var(--muted);letter-spacing:.04em;margin-top:auto}
+  .vm{color:var(--accent-soft)} .acc .vm{color:var(--accent-ink)}
+  strong{font-weight:600;color:var(--text)}
+
+  .bigstat{display:flex;align-items:baseline;gap:22px}
+  .bigstat .v{font-family:var(--disp);font-size:170px;font-weight:500;line-height:.85;letter-spacing:-.06em;color:var(--accent)}
+  .bigstat .u{font-family:var(--mono);font-size:16px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+
+  .cols3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--line-strong);margin-top:30px}
+  .cols3>div{padding:18px 24px 0 0}
+  .cols3>div+div{padding-left:24px;border-left:1px solid var(--line-strong)}
+  .acc .cols3,.acc .cols3>div+div{border-color:rgba(11,7,22,.3)}
+  .k{font-family:var(--mono);font-size:12px;letter-spacing:.17em;text-transform:uppercase;color:var(--accent)}
+  .acc .k{color:var(--accent-ink)}
+  .d{font-size:17px;line-height:1.45;margin-top:8px;color:var(--text-2)}
+  .acc .d{color:rgba(11,7,22,.82)}
+
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:46px;border-top:1px solid var(--line-strong);padding-top:20px;margin-top:28px}
+  .split h4{margin:0 0 10px;font-family:var(--mono);font-size:12px;letter-spacing:.17em;text-transform:uppercase;color:var(--accent)}
+  .split h4.neg{color:var(--bad)}
+  .split ul{margin:0;padding-left:18px;font-size:18px;line-height:1.5;color:var(--text-2)}
+  .split li{margin-bottom:8px}
+
+  .rows{display:flex;flex-direction:column}
+  .rows .r{display:grid;grid-template-columns:150px 1fr;gap:28px;align-items:baseline;
+    padding:15px 0;border-top:1px solid var(--line)}
+  .rows .r:last-child{border-bottom:1px solid var(--line)}
+  .rows .step{font-family:var(--mono);font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+  .rows .what{font-size:21px;line-height:1.35}
+  .rows .what em{font-style:normal;color:var(--muted)}
+
+  .facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 56px}
+  .fact{border-top:1px solid var(--line-strong);padding:17px 0}
+  .fact .v{font-family:var(--disp);font-size:36px;font-weight:500;letter-spacing:-.035em;line-height:1}
+  .fact .t{font-size:16px;color:var(--text-2);margin-top:8px;line-height:1.45}
+  .fact .t code{font-family:var(--mono);font-size:14px;color:var(--accent-soft)}
+
+  .steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:30px;margin-top:26px}
+  .step3{border-top:2px solid var(--accent);padding-top:16px}
+  .step3 .when{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+  .step3 .ttl{font-family:var(--disp);font-size:26px;font-weight:500;letter-spacing:-.02em;margin-top:8px}
+  .step3 .d{margin-top:8px}
+
+  /* ---------- diagrams ---------- */
+  svg.fig{width:100%;height:auto;display:block;overflow:visible;margin-top:8px}
+  /* A figure's caption is prose, not a label: sentence case, below the drawing. */
+  .cap{margin:30px auto 0;font-size:20px;line-height:1.45;color:var(--text-2);text-align:center;max-width:74ch}
+  .cap strong{color:var(--text)}
+  .fig text{font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:.07em;
+    text-transform:uppercase;fill:#7c7f8d}
+  .fig text.hi{fill:#bea7ff}
+  .fig text.big{font-size:17px;fill:#f4f4f6;letter-spacing:.04em}
+  .fig text.neg{fill:#f2555a}
+  .fig text.plain{text-transform:none;letter-spacing:.02em}
+  .fig text.ok{fill:#3ddc97}
+
+  /* ---------- cover ---------- */
+  /* The mark is always white — it is never tinted with the accent. */
+  .cover .mark{width:96px;height:96px;color:#fff;display:block}
+  .cover .name{font-family:var(--disp);font-size:132px;font-weight:500;letter-spacing:-.055em;line-height:.9;margin-top:22px}
+  .cover .tag{font-family:var(--disp);font-size:36px;font-weight:400;letter-spacing:-.02em;color:var(--text-2);margin-top:18px;max-width:22ch;line-height:1.1}
+  .cover .meta{margin-top:40px;display:flex;gap:40px;font-family:var(--mono);font-size:13px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--muted);border-top:1px solid var(--line-strong);padding-top:18px;width:100%}
+  .cover .meta b{color:var(--accent-soft);font-weight:500}
+
+  .pg{position:absolute;right:72px;bottom:30px;font-family:var(--mono);font-size:11px;letter-spacing:.18em;color:var(--line-strong)}
+  .acc .pg{color:rgba(11,7,22,.45)}
+  .wm{position:absolute;left:72px;bottom:30px;font-family:var(--mono);font-size:11px;letter-spacing:.2em;
+    text-transform:uppercase;color:var(--line-strong)}
+  .acc .wm{color:rgba(11,7,22,.45)}
+</style>
+
+<!-- ============================================================ 01 cover -->
+<section class="slide cover">
+  <svg class="mark" viewBox="276 276 880 880" fill="currentColor" aria-hidden="true">
+    <path d="M 940 306 L 652 565 C 640 576 636 586 635 598 L 622 765 Q 621 777 633 775 L 927 518 C 938 507 943 497 945 483 L 957 322 Q 958 305 940 306 Z"/>
+    <path d="M 940 306 L 652 565 C 640 576 636 586 635 598 L 622 765 Q 621 777 633 775 L 927 518 C 938 507 943 497 945 483 L 957 322 Q 958 305 940 306 Z" transform="translate(-152 358)"/>
+  </svg>
+  <div class="name">Sup</div>
+  <div class="tag">Settlement that proves delivery without exposing the trade.</div>
+  <div class="meta">
+    <span>HackCanton S3 &middot; <b>Track 2, Financial Applications</b></span>
+    <span>Private atomic DvP on Canton</span>
+    <span>Live on Canton DevNet</span>
+  </div>
+  <div class="wm">Sup</div><div class="pg">01</div>
+</section>
+
+<!-- ============================================================ 02 market -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">01</span>The market that has to settle quietly</div>
+  <div class="rule"></div>
+  <div class="body">
+    <div class="bigstat"><span class="v">$66.7B</span><span class="u">traded a day</span></div>
+    <p class="lede" style="margin-top:26px">in US corporate debt, against $12.1 trillion outstanding. Almost all of it negotiated one-to-one.</p>
+    <div class="cols3">
+      <div><div class="k">a block trade</div><div class="d">moves the market the moment anyone learns it happened</div></div>
+      <div><div class="k">so desks</div><div class="d">negotiate bilaterally, off any public venue</div></div>
+      <div><div class="k">and then</div><div class="d">someone still has to confirm the delivery</div></div>
+    </div>
+  </div>
+  <div class="src">Source &middot; SIFMA, US corporate bond statistics, Q2 2026 &middot; sifma.org/research/statistics/us-corporate-bonds-statistics</div>
+  <div class="wm">Sup</div><div class="pg">02</div>
+</section>
+
+<!-- ============================================================ 03 the choice -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">02</span>Two ways to settle, both bad</div>
+  <div class="rule"></div>
+  <div class="body">
+    <h2 class="h">Expose the trade, or hand a third party all of it.</h2>
+    <div class="split">
+      <div>
+        <h4 class="neg">On a public chain</h4>
+        <ul>
+          <li>Price, size and both counterparties are readable the moment it settles &mdash; often before.</li>
+          <li>For a block, the <strong>fact of the trade</strong> is the leak.</li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="neg">Off-chain, through an agent</h4>
+        <ul>
+          <li>The settlement agent is handed the whole trade to confirm one fact.</li>
+          <li>Payment and delivery are separate movements, reconciled afterwards.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="src">Evidence that leakage is real &middot; Tradeweb, &ldquo;Information leakage in US credit: evidence from all-to-all RFQs&rdquo;, 2026 (platform-operator research, indicative)</div>
+  <div class="wm">Sup</div><div class="pg">03</div>
+</section>
+
+<!-- ============================================================ 04 private agreement -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">03</span>A private agreement</div>
+  <div class="rule"></div>
+  <div class="body">
+    <svg class="fig" viewBox="0 0 1136 400" role="img" aria-label="Two institutions agree a block trade: price, size, asset, quantity, both names.">
+      <line x1="140" y1="200" x2="996" y2="200" stroke="#22242f" stroke-width="2"/>
+      <circle cx="140" cy="200" r="46" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".55"/>
+      <circle cx="140" cy="200" r="13" fill="#f4f4f6"/>
+      <circle cx="996" cy="200" r="46" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".55"/>
+      <circle cx="996" cy="200" r="13" fill="#f4f4f6"/>
+      <text x="140" y="276" text-anchor="middle">seller</text>
+      <text x="996" y="276" text-anchor="middle">buyer</text>
+      <rect x="378" y="108" width="380" height="184" fill="#8e64ff" fill-opacity=".09" stroke="#bea7ff" stroke-width="1.5"/>
+      <text class="big" x="568" y="152" text-anchor="middle">price &nbsp;·&nbsp; size</text>
+      <text class="big" x="568" y="192" text-anchor="middle">asset &nbsp;·&nbsp; quantity</text>
+      <text class="big" x="568" y="232" text-anchor="middle">seller &nbsp;·&nbsp; buyer</text>
+      <text class="hi" x="568" y="272" text-anchor="middle">confidential</text>
+    </svg>
+    <p class="cap">Now it has to settle &mdash; and whichever way they do that today, something has to give.</p>
+  </div>
+  <div class="wm">Sup</div><div class="pg">04</div>
+</section>
+
+<!-- ============================================================ 05 public leak -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">04</span>Settle it on shared state and everyone reads it</div>
+  <div class="rule"></div>
+  <div class="body">
+    <svg class="fig" viewBox="0 0 1136 400" role="img" aria-label="On a shared-state chain the terms leak to every outsider.">
+      <g stroke="#f2555a" stroke-width="1" opacity=".45">
+        <line x1="568" y1="200" x2="80" y2="52"/><line x1="568" y1="200" x2="240" y2="24"/>
+        <line x1="568" y1="200" x2="430" y2="18"/><line x1="568" y1="200" x2="700" y2="18"/>
+        <line x1="568" y1="200" x2="892" y2="26"/><line x1="568" y1="200" x2="1056" y2="56"/>
+        <line x1="568" y1="200" x2="52" y2="200"/><line x1="568" y1="200" x2="1086" y2="200"/>
+        <line x1="568" y1="200" x2="80" y2="348"/><line x1="568" y1="200" x2="250" y2="378"/>
+        <line x1="568" y1="200" x2="440" y2="384"/><line x1="568" y1="200" x2="700" y2="384"/>
+        <line x1="568" y1="200" x2="890" y2="376"/><line x1="568" y1="200" x2="1058" y2="346"/>
+      </g>
+      <g fill="#f2555a">
+        <circle cx="80" cy="52" r="6"/><circle cx="240" cy="24" r="6"/><circle cx="430" cy="18" r="6"/>
+        <circle cx="700" cy="18" r="6"/><circle cx="892" cy="26" r="6"/><circle cx="1056" cy="56" r="6"/>
+        <circle cx="52" cy="200" r="6"/><circle cx="1086" cy="200" r="6"/>
+        <circle cx="80" cy="348" r="6"/><circle cx="250" cy="378" r="6"/><circle cx="440" cy="384" r="6"/>
+        <circle cx="700" cy="384" r="6"/><circle cx="890" cy="376" r="6"/><circle cx="1058" cy="346" r="6"/>
+      </g>
+      <rect x="400" y="150" width="336" height="100" fill="#08080c" stroke="#f2555a" stroke-width="1.5"/>
+      <text class="big" x="568" y="190" text-anchor="middle">price · size · both names</text>
+      <text class="neg" x="568" y="222" text-anchor="middle">readable by every outsider</text>
+    </svg>
+    <p class="cap">Every outsider reads the price, the size and both counterparties. For a block, <strong>the fact of the trade is the leak</strong>.</p>
+  </div>
+  <div class="wm">Sup</div><div class="pg">05</div>
+</section>
+
+<!-- ============================================================ 06 agent sees all -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">05</span>Or tell the settlement agent everything</div>
+  <div class="rule"></div>
+  <div class="body">
+    <svg class="fig" viewBox="0 0 1136 400" role="img" aria-label="The settlement agent must confirm one fact but is handed the whole trade.">
+      <polygon points="470,196 666,196 620,64 516,64" fill="#f2555a" fill-opacity=".16"/>
+      <circle cx="568" cy="48" r="34" fill="none" stroke="#f2555a" stroke-width="1.5" opacity=".7"/>
+      <circle cx="568" cy="48" r="11" fill="#f4f4f6"/>
+      <text x="516" y="54" text-anchor="end">settlement agent</text>
+      <text class="neg" x="286" y="100" text-anchor="middle">price</text>
+      <text class="neg" x="850" y="100" text-anchor="middle">quantity</text>
+      <text class="neg" x="286" y="140" text-anchor="middle">both names</text>
+      <text class="neg" x="850" y="140" text-anchor="middle">the whole trade</text>
+      <line x1="140" y1="248" x2="996" y2="248" stroke="#22242f" stroke-width="2"/>
+      <circle cx="140" cy="248" r="40" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".4"/>
+      <circle cx="140" cy="248" r="12" fill="#f4f4f6"/>
+      <circle cx="996" cy="248" r="40" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".4"/>
+      <circle cx="996" cy="248" r="12" fill="#f4f4f6"/>
+      <text x="140" y="318" text-anchor="middle">seller</text>
+      <text x="996" y="318" text-anchor="middle">buyer</text>
+      <rect x="430" y="200" width="276" height="96" fill="#8e64ff" fill-opacity=".07" stroke="#2f3240" stroke-width="1.5"/>
+      <text class="big" x="568" y="254" text-anchor="middle">the trade</text>
+    </svg>
+    <p class="cap">The agent is handed the whole trade in order to confirm <strong>one fact</strong>: was the delivery reference valid?</p>
+  </div>
+  <div class="wm">Sup</div><div class="pg">06</div>
+</section>
+
+<!-- ============================================================ 07 the gap -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">06</span>And the two legs never meet</div>
+  <div class="rule"></div>
+  <div class="body">
+    <svg class="fig" viewBox="0 0 1136 400" role="img" aria-label="Payment and delivery move in separate systems; the gap between them is settlement risk.">
+      <circle cx="120" cy="200" r="42" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".45"/>
+      <circle cx="120" cy="200" r="12" fill="#f4f4f6"/>
+      <circle cx="1016" cy="200" r="42" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".45"/>
+      <circle cx="1016" cy="200" r="12" fill="#f4f4f6"/>
+      <text x="120" y="268" text-anchor="middle">seller</text>
+      <text x="1016" y="268" text-anchor="middle">buyer</text>
+
+      <line x1="178" y1="112" x2="700" y2="112" stroke="#22242f" stroke-width="1.5" stroke-dasharray="5 5"/>
+      <rect x="700" y="86" width="52" height="52" fill="none" stroke="#f4f4f6" stroke-width="1.5"/>
+      <text x="726" y="68" text-anchor="middle">delivery</text>
+      <text x="300" y="100" >system a</text>
+
+      <line x1="958" y1="288" x2="420" y2="288" stroke="#22242f" stroke-width="1.5" stroke-dasharray="5 5"/>
+      <rect x="368" y="262" width="52" height="52" fill="none" stroke="#bea7ff" stroke-width="1.5"/>
+      <text x="394" y="344" text-anchor="middle">payment</text>
+      <text x="800" y="276">system b</text>
+
+      <line x1="394" y1="200" x2="726" y2="200" stroke="#f2555a" stroke-width="2"/>
+      <line x1="394" y1="186" x2="394" y2="214" stroke="#f2555a" stroke-width="2"/>
+      <line x1="726" y1="186" x2="726" y2="214" stroke="#f2555a" stroke-width="2"/>
+      <text class="neg" x="560" y="182" text-anchor="middle">this gap is the settlement risk</text>
+    </svg>
+    <p class="cap">Two movements in two systems, reconciled afterwards by hand.</p>
+  </div>
+  <div class="wm">Sup</div><div class="pg">07</div>
+</section>
+
+<!-- ============================================================ 08 solution title -->
+<section class="slide acc">
+  <div class="eyebrow"><span class="n">07</span>The solution</div>
+  <div class="rule"></div>
+  <div class="body">
+    <h2 class="h">Sup removes the choice.</h2>
+    <p class="lede" style="margin-top:24px;max-width:46ch">A private offer to one named buyer. Both legs locked on the ledger. An agent that confirms a fingerprint and is told nothing else. Then one transaction that moves both sides, or neither.</p>
+  </div>
+  <div class="wm">Sup</div><div class="pg">08</div>
+</section>
+
+<!-- ============================================================ 09 escrow -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">08</span>Escrow, in the contract</div>
+  <div class="rule"></div>
+  <div class="body">
+    <svg class="fig" viewBox="0 0 1136 400" role="img" aria-label="Private terms reach one buyer, escrow opens, and both legs are locked.">
+      <circle cx="120" cy="200" r="42" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".45"/>
+      <circle cx="120" cy="200" r="12" fill="#f4f4f6"/>
+      <circle cx="1016" cy="200" r="42" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".45"/>
+      <circle cx="1016" cy="200" r="12" fill="#f4f4f6"/>
+      <text x="120" y="268" text-anchor="middle">seller</text>
+      <text x="1016" y="268" text-anchor="middle">buyer</text>
+
+      <rect x="366" y="92" width="404" height="216" fill="#8e64ff" fill-opacity=".09"
+            stroke="#8e64ff" stroke-width="1.5" stroke-dasharray="7 6"/>
+      <text class="hi" x="568" y="74" text-anchor="middle">escrow</text>
+
+      <line x1="178" y1="200" x2="420" y2="200" stroke="#8e64ff" stroke-width="1.5"/>
+      <line x1="958" y1="200" x2="716" y2="200" stroke="#8e64ff" stroke-width="1.5"/>
+      <polygon points="420,200 404,193 404,207" fill="#8e64ff"/>
+      <polygon points="716,200 732,193 732,207" fill="#8e64ff"/>
+
+      <rect x="430" y="168" width="64" height="64" fill="none" stroke="#8e64ff" stroke-width="2"/>
+      <rect x="642" y="168" width="64" height="64" fill="none" stroke="#8e64ff" stroke-width="2"/>
+      <text class="hi" x="462" y="150" text-anchor="middle">asset</text>
+      <text class="hi" x="674" y="150" text-anchor="middle">payment</text>
+      <text class="hi" x="462" y="262" text-anchor="middle">locked</text>
+      <text class="hi" x="674" y="262" text-anchor="middle">locked</text>
+      <text class="big" x="568" y="208" text-anchor="middle">⊕</text>
+    </svg>
+    <p class="cap">Only the named buyer ever received the terms. Both legs are now <strong>binding on the ledger</strong>.</p>
+  </div>
+  <div class="wm">Sup</div><div class="pg">09</div>
+</section>
+
+<!-- ============================================================ 10 fingerprint -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">09</span>What the agent receives</div>
+  <div class="rule"></div>
+  <div class="body">
+    <svg class="fig" viewBox="0 0 1136 400" role="img" aria-label="The agent receives only a trade id and a document hash.">
+      <circle cx="568" cy="48" r="34" fill="none" stroke="#3ddc97" stroke-width="1.5" opacity=".7"/>
+      <circle cx="568" cy="48" r="11" fill="#f4f4f6"/>
+      <text x="516" y="54" text-anchor="end">settlement agent</text>
+      <line x1="568" y1="86" x2="568" y2="170" stroke="#3ddc97" stroke-width="2"/>
+      <text class="ok plain" x="700" y="106" text-anchor="start">TRADE-0042</text>
+      <text class="ok plain" x="700" y="134" text-anchor="start">sha256 9f3c…e1b0</text>
+      <text x="700" y="162" text-anchor="start">re-computed, then approved</text>
+
+      <rect x="366" y="170" width="404" height="150" fill="#8e64ff" fill-opacity=".09"
+            stroke="#8e64ff" stroke-width="1.5" stroke-dasharray="7 6"/>
+      <text class="big" x="568" y="226" text-anchor="middle">price · size · asset · quantity</text>
+      <line x1="406" y1="220" x2="730" y2="220" stroke="#f2555a" stroke-width="2"/>
+      <text class="neg" x="568" y="280" text-anchor="middle">never delivered to the agent</text>
+
+      <circle cx="120" cy="246" r="34" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".4"/>
+      <circle cx="120" cy="246" r="11" fill="#f4f4f6"/>
+      <circle cx="1016" cy="246" r="34" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".4"/>
+      <circle cx="1016" cy="246" r="11" fill="#f4f4f6"/>
+      <text x="120" y="306" text-anchor="middle">seller</text>
+      <text x="1016" y="306" text-anchor="middle">buyer</text>
+    </svg>
+    <p class="cap">The agent&rsquo;s dashboard cannot show the price, because the price <strong>never arrived</strong>.</p>
+  </div>
+  <div class="wm">Sup</div><div class="pg">10</div>
+</section>
+
+<!-- ============================================================ 11 atomic -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">10</span>One transaction, or none</div>
+  <div class="rule"></div>
+  <div class="body">
+    <svg class="fig" viewBox="0 0 1136 400" role="img" aria-label="Both locked legs are consumed and both deliveries created in a single transaction.">
+      <circle cx="568" cy="200" r="150" fill="none" stroke="#8e64ff" stroke-width="1" opacity=".22"/>
+      <circle cx="568" cy="200" r="104" fill="none" stroke="#8e64ff" stroke-width="1" opacity=".4"/>
+      <circle cx="568" cy="200" r="58" fill="#8e64ff" fill-opacity=".14" stroke="#8e64ff" stroke-width="2"/>
+      <text class="big plain" x="568" y="196" text-anchor="middle">SettleDvP</text>
+      <text class="hi" x="568" y="222" text-anchor="middle">one transaction</text>
+
+      <circle cx="120" cy="200" r="42" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".45"/>
+      <circle cx="120" cy="200" r="12" fill="#f4f4f6"/>
+      <circle cx="1016" cy="200" r="42" fill="none" stroke="#bea7ff" stroke-width="1.5" opacity=".45"/>
+      <circle cx="1016" cy="200" r="12" fill="#f4f4f6"/>
+      <text x="120" y="268" text-anchor="middle">seller</text>
+      <text x="1016" y="268" text-anchor="middle">buyer</text>
+
+      <line x1="490" y1="138" x2="206" y2="138" stroke="#8e64ff" stroke-width="1.5"/>
+      <polygon points="206,138 222,131 222,145" fill="#8e64ff"/>
+      <rect x="282" y="112" width="52" height="52" fill="none" stroke="#bea7ff" stroke-width="2"/>
+      <text class="hi" x="308" y="100" text-anchor="middle">payment delivered</text>
+
+      <line x1="646" y1="262" x2="930" y2="262" stroke="#8e64ff" stroke-width="1.5"/>
+      <polygon points="930,262 914,255 914,269" fill="#8e64ff"/>
+      <rect x="802" y="236" width="52" height="52" fill="none" stroke="#f4f4f6" stroke-width="2"/>
+      <text x="828" y="318" text-anchor="middle">asset delivered</text>
+
+    </svg>
+    <p class="cap">Both locked legs consumed, both deliveries created. <strong>No half-settled state, nothing to reconcile.</strong></p>
+  </div>
+  <div class="wm">Sup</div><div class="pg">11</div>
+</section>
+
+<!-- ============================================================ 12 registries -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">11</span>Two independent registries, one code path</div>
+  <div class="rule"></div>
+  <div class="body">
+    <svg class="fig" viewBox="0 0 1136 400" role="img" aria-label="Canton Coin and BitSafe CBTC settle through the same Registry interface.">
+      <rect x="406" y="128" width="324" height="140" fill="#8e64ff" fill-opacity=".09" stroke="#8e64ff" stroke-width="1.5"/>
+      <text class="big plain" x="568" y="186" text-anchor="middle">Sup</text>
+      <text class="hi" x="568" y="216" text-anchor="middle">one Registry interface</text>
+
+      <circle cx="140" cy="198" r="46" fill="none" stroke="#3ddc97" stroke-width="2"/>
+      <circle cx="140" cy="198" r="16" fill="none" stroke="#3ddc97" stroke-width="1.5" opacity=".6"/>
+      <text class="ok" x="140" y="276" text-anchor="middle">dso registry</text>
+      <text x="140" y="302" text-anchor="middle">real canton coin</text>
+      <line x1="192" y1="198" x2="390" y2="198" stroke="#3ddc97" stroke-width="1.5"/>
+      <polygon points="390,198 374,191 374,205" fill="#3ddc97"/>
+      <text x="290" y="180" text-anchor="middle">allocation</text>
+
+      <circle cx="996" cy="198" r="46" fill="none" stroke="#8e64ff" stroke-width="2"/>
+      <circle cx="996" cy="198" r="16" fill="none" stroke="#8e64ff" stroke-width="1.5" opacity=".6"/>
+      <text class="hi" x="996" y="276" text-anchor="middle">digital asset utility</text>
+      <text x="996" y="302" text-anchor="middle">real bitsafe cbtc</text>
+      <line x1="944" y1="198" x2="746" y2="198" stroke="#8e64ff" stroke-width="1.5"/>
+      <polygon points="746,198 762,191 762,205" fill="#8e64ff"/>
+      <text x="846" y="180" text-anchor="middle">allocation</text>
+
+      <text x="568" y="78" text-anchor="middle">canton token standard &middot; cip-56</text>
+    </svg>
+    <p class="cap">Sup executes the registry&rsquo;s allocation and its own in the same transaction. <strong>Neither registry knows Sup exists.</strong></p>
+  </div>
+  <div class="wm">Sup</div><div class="pg">12</div>
+</section>
+
+<!-- ============================================================ 13 the flow -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">12</span>The whole flow</div>
+  <div class="rule"></div>
+  <div class="body">
+    <div class="rows">
+      <div class="r"><div class="step">Propose</div><div class="what">Seller sends private terms &mdash; <em>only the named buyer receives the contract</em></div></div>
+      <div class="r"><div class="step">Accept</div><div class="what">Buyer accepts &mdash; <em>escrow opens</em></div></div>
+      <div class="r"><div class="step">Lock asset</div><div class="what">Seller locks the bond &mdash; <em>one transaction, now binding</em></div></div>
+      <div class="r"><div class="step">Lock payment</div><div class="what">Buyer locks the cash, Canton Coin or CBTC &mdash; <em>one transaction, now binding</em></div></div>
+      <div class="r"><div class="step">Verify</div><div class="what">Agent re-computes one reference &mdash; <em>a trade id and a document hash, nothing else</em></div></div>
+      <div class="r"><div class="step">Settle</div><div class="what">Either principal settles &mdash; <em>both deliveries commit in one transaction, or neither does</em></div></div>
+    </div>
+  </div>
+  <div class="src">12 Daml templates &middot; a portal per role (seller, buyer, optional agent) &middot; per-trade proof read back from the node as the signed-in party</div>
+  <div class="wm">Sup</div><div class="pg">13</div>
+</section>
+
+<!-- ============================================================ 14 why canton -->
+<section class="slide panel">
+  <div class="eyebrow"><span class="n">13</span>Why this needs Canton</div>
+  <div class="rule"></div>
+  <div class="body">
+    <h2 class="h">On a shared-state chain, &ldquo;the agent shouldn&rsquo;t see the price&rdquo; is a&nbsp;request.</h2>
+    <h3 class="h vm" style="margin-top:22px">On Canton it is a property of the contract.</h3>
+    <p class="lede" style="margin-top:24px;max-width:58ch">Visibility is declared in Daml as signatories and observers, and the protocol delivers a contract only to the parties on it. Every trade page lists its transactions, and <strong>Verify</strong> reads each one back from the node as the signed-in party. A party that was not on the trade is told: this transaction does not exist for you.</p>
+  </div>
+  <div class="src">Canton 3.6.1 &middot; Daml 3.6.0 &middot; Canton Token Standard (CIP-56): Holding, Allocation, TransferInstruction, AllocationFactory</div>
+  <div class="wm">Sup</div><div class="pg">14</div>
+</section>
+
+<!-- ============================================================ 15 evidence -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">14</span>Running, and checkable by a judge</div>
+  <div class="rule"></div>
+  <div class="body">
+    <div class="facts">
+      <div class="fact"><div class="v">38 settled trades</div><div class="t">on the shared HackCanton DevNet participant, not a local sandbox: 24 in the CashUSD test token, 4 in real Canton Coin, 10 in real CBTC</div></div>
+      <div class="fact"><div class="v">46 rejection checks</div><div class="t">across 14 Daml scripts: wrong asset class, short quantity, a non-agent approving, an outsider settling, an approval from a different trade</div></div>
+      <div class="fact"><div class="v">Real CBTC, one transaction</div><div class="t"><code>1220b7897407c4…</code> &middot; offset 2759757<br>BitSafe CBTC through the Digital Asset Utility registry</div></div>
+      <div class="fact"><div class="v">Real Canton Coin, one transaction</div><div class="t"><code>12203a6f3f48c0…</code> &middot; offset 2705360<br>Amulet through the DSO registry, to a party with no wallet</div></div>
+    </div>
+  </div>
+  <div class="src">4 live-ledger end-to-end suites pass on DevNet &middot; <strong>Not proven:</strong> we have not interviewed settlement-operations teams, so we claim no savings</div>
+  <div class="wm">Sup</div><div class="pg">15</div>
+</section>
+
+<!-- ============================================================ 16 ICP -->
+<section class="slide panel">
+  <div class="eyebrow"><span class="n">15</span>Who it is for</div>
+  <div class="rule"></div>
+  <div class="body">
+    <h2 class="h">The operations team that already runs a confirmation step.</h2>
+    <p class="lede" style="margin-top:20px;max-width:56ch">A broker, fund administrator or transfer agent settling institutional trades in tokenized funds, bonds or private credit.</p>
+    <div class="cols3">
+      <div><div class="k">they already</div><div class="d">pay a named third party to confirm every delivery</div></div>
+      <div><div class="k">their clients</div><div class="d">treat price and counterparty as confidential</div></div>
+      <div><div class="k">and they carry</div><div class="d">the break-management cost of two settlements that can disagree</div></div>
+    </div>
+  </div>
+  <div class="src"><strong>Not our user:</strong> retail traders, public order books, anyone who needs price discovery. Sup begins after two parties have agreed a price.</div>
+  <div class="wm">Sup</div><div class="pg">16</div>
+</section>
+
+<!-- ============================================================ 17 GTM -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">16</span>Go to market</div>
+  <div class="rule"></div>
+  <div class="body">
+    <h3 class="h">Wedge: replace the confirmation step for one desk, in one instrument.</h3>
+    <div class="steps">
+      <div class="step3"><div class="when">0&ndash;3 months</div><div class="ttl">Design partner</div><div class="d">One administrator or broker and two counterparties it already settles for. Sup replaces the email-and-spreadsheet confirmation. A closed network &mdash; which is exactly how the contracts model it.</div></div>
+      <div class="step3"><div class="when">3&ndash;9 months</div><div class="ttl">Agent pull</div><div class="d">Every trade names a settlement agent. An agent that gets one workflow with zero commercial exposure has a reason to require it from its other clients.</div></div>
+      <div class="step3"><div class="when">9&ndash;18 months</div><div class="ttl">Platform</div><div class="d">More instruments, netting, multi-leg settlement, and registry integrations as real tokenized assets arrive on Canton.</div></div>
+    </div>
+    <p class="lede" style="margin-top:28px;max-width:60ch"><strong>Business model:</strong> a per-settlement fee, charged when the transaction commits &mdash; the only moment value is created.</p>
+  </div>
+  <div class="wm">Sup</div><div class="pg">17</div>
+</section>
+
+<!-- ============================================================ 18 limits -->
+<section class="slide">
+  <div class="eyebrow"><span class="n">17</span>What is not true yet</div>
+  <div class="rule"></div>
+  <div class="body">
+    <h3 class="h">A prototype, said plainly.</h3>
+    <div class="split">
+      <div>
+        <h4>Real</h4>
+        <ul>
+          <li>Canton Coin and BitSafe CBTC, on DevNet, each through its own registry.</li>
+          <li>Privacy and atomicity, enforced by the ledger and tested against it.</li>
+          <li>Seven live parties on the shared DevNet participant, with on-chain custody accounts.</li>
+        </ul>
+      </div>
+      <div>
+        <h4 class="neg">Not real</h4>
+        <ul>
+          <li><code style="font-family:var(--mono);font-size:16px;color:var(--accent-soft)">BOND-2031</code> and <code style="font-family:var(--mono);font-size:16px;color:var(--accent-soft)">CashUSD</code> are demo assets, not a security or cash.</li>
+          <li>DevNet CC and CBTC have no market value; faucet amounts are tiny.</li>
+          <li>Custodial demo wallet &mdash; no end-user signing yet.</li>
+          <li>No legal title transfer, no production custody or compliance.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="src">An external payment lock is defined by its registry: the sender can withdraw it. The seller's exposure is that settlement can fail, not that value is lost.</div>
+  <div class="wm">Sup</div><div class="pg">18</div>
+</section>
+
+<!-- ============================================================ 19 ask -->
+<section class="slide acc">
+  <div class="eyebrow"><span class="n">18</span>Ask</div>
+  <div class="rule"></div>
+  <div class="body">
+    <h2 class="h">Settlement that proves delivery without exposing the trade.</h2>
+    <p class="lede" style="margin-top:26px;max-width:52ch">One introduction: a tokenized-fund administrator or broker that settles institutional trades today, and a settlement agent willing to review exactly what it would see.</p>
+    <div class="cols3">
+      <div><div class="k">next milestone</div><div class="d">per-party signing, so each party signs with its own key</div></div>
+      <div><div class="k">in 90 days</div><div class="d">one pilot counterparty pair, and 20 settlements that are not us</div></div>
+      <div><div class="k">try it</div><div class="d">the live demo, the Daml source, and the transaction hashes above</div></div>
+    </div>
+  </div>
+  <div class="wm">Sup</div><div class="pg">19</div>
+</section>

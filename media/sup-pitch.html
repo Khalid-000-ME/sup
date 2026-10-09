@@ -1,0 +1,935 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sup Pitch Film</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  /* Sup's own tokens, lifted from web/src/app/globals.css: a dark flat base,
+     one violet accent, sharp corners, numbers always mono. */
+  :root{
+    color-scheme: dark;
+    --bg:#08080c; --s1:#0d0e14; --s2:#13141c; --s3:#191b25;
+    --line:#22242f; --line-strong:#2f3240;
+    --text:#f4f4f6; --text-2:#b3b5c0; --muted:#7c7f8d;
+    --accent:#8e64ff; --accent-soft:#bea7ff; --accent-ink:#0b0716;
+    --ok:#3ddc97; --bad:#f2555a;
+    --disp:'Space Grotesk','Helvetica Neue',Arial,sans-serif;
+    --sans:'Bricolage Grotesque','Space Grotesk',Arial,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 16px}
+
+  .masthead{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:baseline;justify-content:space-between;
+    border-bottom:1px solid var(--line-strong);padding-bottom:14px;margin-bottom:18px}
+  .masthead h1{margin:0;font-family:var(--disp);font-size:28px;font-weight:600;letter-spacing:-.03em}
+  .masthead p{margin:0;font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+
+  /* ---------- stage ---------- */
+  .player{background:var(--bg);border:1px solid var(--line)}
+  .stage{position:relative;aspect-ratio:16/9;max-width:100%;overflow:hidden;background:var(--bg);
+    color:var(--text);container-type:inline-size}
+  #gl{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:1}
+  #labels{position:absolute;inset:0;z-index:2;pointer-events:none}
+  .lbl{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-family:var(--mono);
+    font-size:1.05cqw;letter-spacing:.07em;color:var(--muted);text-transform:uppercase}
+  .lbl.hi{color:var(--accent-soft)}
+  .lbl.big{font-size:1.3cqw;color:var(--text);letter-spacing:.04em}
+  .lbl.bad{color:var(--bad)}
+  .lbl.plain{text-transform:none;letter-spacing:.02em}
+
+  .scene{position:absolute;inset:0;z-index:3;opacity:0;pointer-events:none;
+    padding:4.4cqw 5cqw 9cqw;display:flex;flex-direction:column}
+  .scene.live{opacity:1}
+  .scene.ink{background:var(--bg)}
+  .scene.panel{background:var(--s1)}
+  .scene.acc{background:var(--accent);color:var(--accent-ink)}
+  .scene.three{background:transparent}
+  .scene.brand{background:var(--bg);padding:0;align-items:center;justify-content:center}
+
+  .brandwrap{display:flex;flex-direction:column;align-items:center;gap:1.6cqw;transform:translateY(-2.2cqw)}
+  .brandmark{width:13cqw;height:13cqw;display:block;color:var(--accent)}
+  .brandname{font-family:var(--disp);font-size:9cqw;font-weight:500;letter-spacing:-.05em;line-height:1}
+  .brandline{font-family:var(--mono);font-size:1.3cqw;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
+
+  .eyebrow{font-family:var(--mono);font-size:1.02cqw;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+  .acc .eyebrow{color:rgba(11,7,22,.72)}
+  .eyebrow .n{color:var(--accent);margin-right:.8cqw}
+  .acc .eyebrow .n{color:var(--accent-ink)}
+  .rule{width:4.4cqw;height:2px;background:var(--accent);margin-top:1.1cqw}
+  .acc .rule{background:var(--accent-ink)}
+
+  .h1{margin:0;font-family:var(--disp);font-size:9cqw;font-weight:500;line-height:.9;letter-spacing:-.05em}
+  .h2{margin:0;font-family:var(--disp);font-size:5.4cqw;font-weight:500;line-height:1;letter-spacing:-.04em;text-wrap:balance}
+  .h3{margin:0;font-family:var(--disp);font-size:3.3cqw;font-weight:500;line-height:1.05;letter-spacing:-.03em;text-wrap:balance}
+  .lede{margin:0;font-size:1.9cqw;line-height:1.4;max-width:36ch;color:var(--text-2)}
+  .acc .lede{color:rgba(11,7,22,.8)}
+  .src{font-family:var(--mono);font-size:.95cqw;color:var(--muted);letter-spacing:.04em}
+  .mono{font-family:var(--mono)}
+  .vm{color:var(--accent-soft)}
+  .acc .vm{color:var(--accent-ink)}
+  .grow{flex:1 1 auto}
+
+  .bigstat{display:flex;align-items:baseline;gap:1.6cqw}
+  .bigstat .v{font-family:var(--disp);font-size:14cqw;font-weight:500;line-height:.85;letter-spacing:-.06em;color:var(--accent)}
+  .acc .bigstat .v{color:var(--accent-ink)}
+  .bigstat .u{font-family:var(--mono);font-size:1.3cqw;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+
+  .cols3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--line-strong)}
+  .cols3>div{padding:1.4cqw 1.8cqw 0 0}
+  .cols3>div+div{padding-left:1.8cqw;border-left:1px solid var(--line-strong)}
+  .acc .cols3,.acc .cols3>div+div{border-color:rgba(11,7,22,.3)}
+  .k{font-family:var(--mono);font-size:.98cqw;letter-spacing:.17em;text-transform:uppercase;color:var(--accent)}
+  .acc .k{color:var(--accent-ink)}
+  .d{font-size:1.35cqw;line-height:1.42;margin-top:.55cqw;color:var(--text-2)}
+  .acc .d{color:rgba(11,7,22,.8)}
+
+  .rows{display:flex;flex-direction:column}
+  .rows .r{display:grid;grid-template-columns:13cqw 1fr;gap:2.2cqw;align-items:baseline;
+    padding:1.05cqw 0;border-top:1px solid var(--line)}
+  .rows .r:last-child{border-bottom:1px solid var(--line)}
+  .rows .step{font-family:var(--mono);font-size:1.05cqw;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+  .rows .what{font-size:1.5cqw;line-height:1.35}
+  .rows .what em{font-style:normal;color:var(--muted)}
+
+  .facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 4cqw}
+  .fact{border-top:1px solid var(--line-strong);padding:1.25cqw 0}
+  .fact .v{font-family:var(--disp);font-size:3cqw;font-weight:500;letter-spacing:-.035em;line-height:1}
+  .fact .t{font-size:1.25cqw;color:var(--text-2);margin-top:.5cqw;line-height:1.4}
+  .fact .t code{font-family:var(--mono);font-size:1.05cqw;color:var(--accent-soft)}
+
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:3.4cqw;border-top:1px solid var(--line-strong);padding-top:1.4cqw}
+  .split h4{margin:0 0 .7cqw;font-family:var(--mono);font-size:.98cqw;letter-spacing:.17em;text-transform:uppercase;color:var(--accent)}
+  .split ul{margin:0;padding-left:1.3cqw;font-size:1.3cqw;line-height:1.5;color:var(--text-2)}
+  .split li{margin-bottom:.45cqw}
+
+  .nogl{display:none}
+  body.no-gl .scene.three{background:var(--bg)}
+  body.no-gl .nogl{display:block;margin-top:auto;margin-bottom:auto}
+
+  /* ---------- subtitles ---------- */
+  .subs{position:absolute;left:0;right:0;bottom:2.4cqw;z-index:40;display:flex;justify-content:center;
+    padding:0 7cqw;pointer-events:none}
+  .subs span{background:rgba(5,5,10,.88);color:var(--text);font-size:1.6cqw;line-height:1.42;
+    padding:.6cqw 1.2cqw;text-align:center;max-width:64ch;border-bottom:2px solid var(--accent)}
+  .subs span:empty{display:none}
+  .subs.off{display:none}
+
+  /* ---------- controls ---------- */
+  .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-top:1px solid var(--line)}
+  .ctrl{appearance:none;border:1px solid var(--line-strong);background:transparent;color:var(--text);
+    font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;padding:9px 13px;cursor:pointer;border-radius:0}
+  .ctrl:hover{border-color:var(--accent)}
+  .ctrl:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .ctrl.play{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);min-width:104px}
+  .ctrl[aria-pressed="false"]{color:var(--muted)}
+  .clock{font-family:var(--mono);font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .track{flex:1 1 200px;min-width:150px;height:30px;display:flex;align-items:center;gap:2px;cursor:pointer}
+  .seg{height:4px;background:var(--line-strong);position:relative;overflow:hidden}
+  .seg i{position:absolute;inset:0 100% 0 0;background:var(--text-2)}
+  .seg.a3d i{background:var(--accent)}
+
+  /* ---------- below the player ---------- */
+  .panels{display:grid;gap:28px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:26px}
+  .panel h2{margin:0 0 12px;font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.18em;text-transform:uppercase;
+    border-bottom:1px solid var(--line-strong);padding-bottom:8px;color:var(--text-2)}
+  .act{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:14px 0 4px}
+  .act:first-child{margin-top:0}
+  .chapters button{appearance:none;display:grid;grid-template-columns:30px 1fr auto;gap:8px;width:100%;text-align:left;
+    border:0;border-top:1px solid var(--line);background:transparent;color:var(--text);font-family:var(--sans);font-size:14px;
+    padding:8px 2px;cursor:pointer}
+  .chapters button:hover{background:var(--s2)}
+  .chapters button[aria-current="true"]{background:var(--accent);color:var(--accent-ink)}
+  .chapters .n,.chapters .t2{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .chapters button[aria-current="true"] .n,.chapters button[aria-current="true"] .t2{color:var(--accent-ink)}
+  .script{max-height:460px;overflow-y:auto;padding-right:6px}
+  .script h3{margin:16px 0 6px;font-family:var(--disp);font-size:15px;font-weight:600;letter-spacing:-.01em}
+  .script h3:first-child{margin-top:0}
+  .script p{margin:3px 0;font-size:14px;line-height:1.55;color:var(--text-2);display:grid;grid-template-columns:44px 1fr;gap:6px}
+  .script p .tc{font-family:var(--mono);font-size:12px;color:var(--accent)}
+  .note{font-size:13px;line-height:1.6;color:var(--muted);margin:14px 0 0}
+  .note code{font-family:var(--mono);font-size:12px;background:var(--s2);padding:1px 5px;color:var(--text-2)}
+
+  /* ---------- motion ---------- */
+  @keyframes rise{from{opacity:0;transform:translateY(1.2cqw)}to{opacity:1;transform:none}}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @keyframes wipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+  .live .a{animation:rise .7s cubic-bezier(.16,1,.3,1) both;animation-delay:var(--d,0s)}
+  .live .f{animation:fade .8s ease both;animation-delay:var(--d,0s)}
+  .live .w{animation:wipe .9s cubic-bezier(.16,1,.3,1) both;animation-delay:var(--d,0s)}
+  .stage.paused *{animation-play-state:paused!important}
+  .stage.rest *{animation:none!important}
+  @media (prefers-reduced-motion: reduce){
+    .live .a,.live .f,.live .w{animation-duration:.01s;animation-delay:0s}
+  }
+
+  body.clean .masthead,body.clean .panels,body.clean .controls,body.clean .footnote{display:none}
+  body.clean .wrap{max-width:none;padding:0}
+  body.clean .player{border:0}
+  body.clean .stage{height:100vh;aspect-ratio:auto}
+  /* A recording should show the film, not a pointer resting on it. */
+  body.clean,body.clean *{cursor:none!important}
+</style>
+
+<div class="wrap">
+  <div class="masthead">
+    <h1>Sup</h1>
+    <p id="runtime">pitch film</p>
+  </div>
+
+  <div class="player">
+    <div class="stage rest" id="stage">
+      <canvas id="gl" aria-hidden="true"></canvas>
+      <div id="labels"></div>
+
+      <!-- ========== ACT 0 — THE CHOICE ========== -->
+      <section class="scene ink" data-scene="0">
+        <div class="eyebrow a"><span class="n">00</span>The market that has to settle quietly</div>
+        <div class="rule a" style="--d:.1s"></div>
+        <div class="grow" style="display:flex;flex-direction:column;justify-content:center;gap:2.2cqw">
+          <div class="bigstat a" style="--d:.35s"><span class="v">$66.7B</span><span class="u">traded a day</span></div>
+          <p class="lede a" style="--d:.8s">in US corporate debt, against $12.1 trillion outstanding. Almost all of it bilateral.</p>
+          <div class="cols3 f" style="--d:5.4s;max-width:64cqw">
+            <div><div class="k">a block trade</div><div class="d">moves the market the moment anyone knows it happened</div></div>
+            <div><div class="k">so desks</div><div class="d">negotiate one-to-one, off any public venue</div></div>
+            <div><div class="k">and then</div><div class="d">someone still has to confirm the delivery</div></div>
+          </div>
+        </div>
+        <div class="src f" style="--d:1.4s">Source · SIFMA, US corporate bond statistics, Q2 2026</div>
+      </section>
+
+      <section class="scene ink" data-scene="1">
+        <div class="eyebrow a"><span class="n">00</span>Two ways to settle, both bad</div>
+        <div class="rule a" style="--d:.1s"></div>
+        <div class="grow" style="display:flex;flex-direction:column;justify-content:center;gap:1.6cqw">
+          <p class="h2 a" style="--d:.3s">Expose the trade, or hand a third party all of it.</p>
+          <div class="split f" style="--d:4.6s">
+            <div>
+              <h4>On a public chain</h4>
+              <ul><li>Price, size and both counterparties are readable the moment it settles.</li>
+                  <li>Often before.</li></ul>
+            </div>
+            <div>
+              <h4>Off-chain</h4>
+              <ul><li>The settlement agent gets the whole trade to confirm one fact.</li>
+                  <li>Payment and delivery are separate movements, reconciled afterwards.</li></ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== ACT I — THE PROBLEM, IN 3D ========== -->
+      <section class="scene three" data-scene="2">
+        <div class="eyebrow a"><span class="n">01</span>A private agreement</div>
+        <div class="nogl"><p class="h2">Two institutions agree a block: a price, a size, an asset, two names.</p></div>
+      </section>
+
+      <section class="scene three" data-scene="3">
+        <div class="eyebrow a"><span class="n">02</span>Everyone reads it</div>
+        <div class="nogl"><p class="h2">Settle it on a shared-state chain and every outsider reads the terms.</p></div>
+      </section>
+
+      <section class="scene three" data-scene="4">
+        <div class="eyebrow a"><span class="n">03</span>Or tell the agent everything</div>
+        <div class="nogl"><p class="h2">The settlement agent is handed the whole trade to confirm one reference.</p></div>
+      </section>
+
+      <section class="scene three" data-scene="5">
+        <div class="eyebrow a"><span class="n">04</span>And the legs don't meet</div>
+        <div class="nogl"><p class="h2">Payment and delivery move in separate systems. The gap between them is the risk.</p></div>
+      </section>
+
+      <!-- ========== ACT II — SUP, IN 3D ========== -->
+      <section class="scene three" data-scene="6">
+        <div class="eyebrow a"><span class="n">05</span>Escrow, in the contract</div>
+        <div class="nogl"><p class="h2">Sup: a private offer to one buyer, then both legs locked on the ledger.</p></div>
+      </section>
+
+      <section class="scene three" data-scene="7">
+        <div class="eyebrow a"><span class="n">06</span>What the agent receives</div>
+        <div class="nogl"><p class="h2">A trade id and a document hash. The price was never sent to it.</p></div>
+      </section>
+
+      <section class="scene three" data-scene="8">
+        <div class="eyebrow a"><span class="n">07</span>One transaction</div>
+        <div class="nogl"><p class="h2">Both locked legs consumed, both deliveries created, atomically.</p></div>
+      </section>
+
+      <section class="scene three" data-scene="9">
+        <div class="eyebrow a"><span class="n">08</span>Two registries, one path</div>
+        <div class="nogl"><p class="h2">Real Canton Coin and real BitSafe CBTC settle through the same interface.</p></div>
+      </section>
+
+      <!-- ========== ACT III — HOW IT WORKS ========== -->
+      <section class="scene brand" data-scene="10">
+        <div class="brandwrap">
+          <svg class="brandmark f" viewBox="276 276 880 880" fill="currentColor" aria-hidden="true">
+            <path d="M 940 306 L 652 565 C 640 576 636 586 635 598 L 622 765 Q 621 777 633 775 L 927 518 C 938 507 943 497 945 483 L 957 322 Q 958 305 940 306 Z"/>
+            <path d="M 940 306 L 652 565 C 640 576 636 586 635 598 L 622 765 Q 621 777 633 775 L 927 518 C 938 507 943 497 945 483 L 957 322 Q 958 305 940 306 Z" transform="translate(-152 358)"/>
+          </svg>
+          <div class="brandname a" style="--d:.5s">Sup</div>
+          <div class="brandline f" style="--d:1.2s">Private atomic delivery-versus-payment on Canton</div>
+        </div>
+      </section>
+
+      <section class="scene panel" data-scene="11">
+        <div class="eyebrow a"><span class="n">09</span>Why this needs Canton</div>
+        <div class="rule a" style="--d:.1s"></div>
+        <div class="grow" style="display:flex;flex-direction:column;justify-content:center;gap:1.8cqw">
+          <p class="h2 a" style="--d:.3s">On a shared-state chain, &ldquo;the agent shouldn&rsquo;t see the price&rdquo; is a&nbsp;request.</p>
+          <p class="h3 vm f" style="--d:5.4s">On Canton it is a property of the contract.</p>
+          <p class="lede f" style="--d:9.4s">Visibility is declared in Daml as signatories and observers, and the protocol delivers a contract only to the parties on it. Every trade page lets you read each transaction back as the signed-in party. A party that was not on the trade is told it does not exist.</p>
+        </div>
+      </section>
+
+      <section class="scene ink" data-scene="12">
+        <div class="eyebrow a"><span class="n">10</span>The whole flow</div>
+        <div class="rule a" style="--d:.1s"></div>
+        <div class="grow" style="display:flex;flex-direction:column;justify-content:center">
+          <div class="rows">
+            <div class="r f" style="--d:.4s"><div class="step">Propose</div><div class="what">Seller sends private terms &mdash; <em>only the named buyer receives them</em></div></div>
+            <div class="r f" style="--d:1.5s"><div class="step">Accept</div><div class="what">Buyer accepts &mdash; <em>escrow opens</em></div></div>
+            <div class="r f" style="--d:3.4s"><div class="step">Lock</div><div class="what">Seller locks the asset, buyer locks the payment &mdash; <em>each one transaction, now binding</em></div></div>
+            <div class="r f" style="--d:6.8s"><div class="step">Verify</div><div class="what">Agent re-computes one reference &mdash; <em>a trade id and a document hash, nothing else</em></div></div>
+            <div class="r f" style="--d:10.4s"><div class="step">Settle</div><div class="what">Either principal settles &mdash; <em>both deliveries commit in one transaction, or neither does</em></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene ink" data-scene="13">
+        <div class="eyebrow a"><span class="n">11</span>Running, and checkable</div>
+        <div class="rule a" style="--d:.1s"></div>
+        <div class="grow" style="display:flex;flex-direction:column;justify-content:center">
+          <div class="facts">
+            <div class="fact f" style="--d:.4s"><div class="v">38 settled trades</div><div class="t">on the shared HackCanton DevNet participant: 24 in a test token, 4 in real Canton Coin, 10 in real CBTC</div></div>
+            <div class="fact f" style="--d:2.2s"><div class="v">46 rejection checks</div><div class="t">across 14 Daml scripts: wrong asset, short quantity, a non-agent approving, an outsider settling</div></div>
+            <div class="fact f" style="--d:4.6s"><div class="v">Real CBTC, one transaction</div><div class="t"><code>1220b7897407c4&hellip;</code> &middot; offset 2759757 &middot; BitSafe CBTC through the Digital Asset Utility registry</div></div>
+            <div class="fact f" style="--d:7.4s"><div class="v">Real Canton Coin, one transaction</div><div class="t"><code>12203a6f3f48c0&hellip;</code> &middot; offset 2705360 &middot; Amulet through the DSO registry</div></div>
+          </div>
+          <p class="src f" style="--d:10.4s" style2="">Every number here is counted from the ledger, not from a deck.</p>
+        </div>
+      </section>
+
+      <section class="scene panel" data-scene="14">
+        <div class="eyebrow a"><span class="n">12</span>Who it is for</div>
+        <div class="rule a" style="--d:.1s"></div>
+        <div class="grow" style="display:flex;flex-direction:column;justify-content:center;gap:1.8cqw">
+          <p class="h2 a" style="--d:.3s">The operations team that already runs a confirmation step.</p>
+          <div class="cols3 f" style="--d:4.4s">
+            <div><div class="k">they already</div><div class="d">pay a named third party to confirm every delivery</div></div>
+            <div><div class="k">their clients</div><div class="d">treat price and counterparty as confidential</div></div>
+            <div><div class="k">and they carry</div><div class="d">the break-management cost of two settlements that can disagree</div></div>
+          </div>
+          <p class="lede f" style="--d:8.6s"><strong style="color:var(--text)">Not our user:</strong> anyone who needs price discovery. Sup begins after two parties have agreed a price.</p>
+        </div>
+      </section>
+
+      <section class="scene ink" data-scene="15">
+        <div class="eyebrow a"><span class="n">13</span>What is not true yet</div>
+        <div class="rule a" style="--d:.1s"></div>
+        <div class="grow" style="display:flex;flex-direction:column;justify-content:center;gap:1.4cqw">
+          <p class="h3 a" style="--d:.3s">A prototype, said plainly.</p>
+          <div class="split f" style="--d:3.4s">
+            <div>
+              <h4>Real</h4>
+              <ul><li>Canton Coin and BitSafe CBTC, on DevNet, through their own registries.</li>
+                  <li>Privacy and atomicity, enforced by the ledger and tested against it.</li></ul>
+            </div>
+            <div>
+              <h4>Not real</h4>
+              <ul><li>The bond and the cash token are demo assets, not securities.</li>
+                  <li>Custodial demo wallet, no per-party signing yet.</li>
+                  <li>We have not interviewed settlement-operations teams, so we claim no savings.</li></ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scene acc" data-scene="16">
+        <div class="eyebrow a"><span class="n">14</span>Ask</div>
+        <div class="rule a" style="--d:.1s"></div>
+        <div class="grow" style="display:flex;flex-direction:column;justify-content:center;gap:1.6cqw">
+          <p class="h2 a" style="--d:.3s">Settlement that proves delivery without exposing the trade.</p>
+          <p class="lede f" style="--d:4.4s">One introduction: a tokenized-fund administrator or broker that settles institutional trades today, and a settlement agent willing to review exactly what it would see.</p>
+        </div>
+      </section>
+
+      <div class="subs" id="subs"><span id="subText"></span></div>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl play" id="play">&#9654; Play</button>
+      <button class="ctrl" id="prev" aria-label="Previous scene">&#9664;&#9664;</button>
+      <button class="ctrl" id="next" aria-label="Next scene">&#9654;&#9654;</button>
+      <div class="track" id="track" role="group" aria-label="Timeline"></div>
+      <span class="clock" id="clock">0:00</span>
+      <button class="ctrl" id="cc" aria-pressed="true">CC</button>
+      <button class="ctrl" id="clean">Record</button>
+    </div>
+  </div>
+
+  <div class="panels">
+    <div class="panel">
+      <h2>Scenes</h2>
+      <div class="chapters" id="chapters"></div>
+      <p class="note"><strong>Record</strong> fills the window with the stage and hides every control, so a screen recording is the film with nothing overlaid on it. <code>Esc</code> leaves record mode, <code>Space</code> plays and pauses, <code>&larr;</code> <code>&rarr;</code> step scenes, <code>C</code> toggles subtitles.</p>
+    </div>
+    <div class="panel">
+      <h2>Narration</h2>
+      <div class="script" id="script"></div>
+    </div>
+  </div>
+  <p class="note footnote">The opening figures are attributed on screen. Everything after them is counted from Sup's contracts on the shared Canton DevNet participant.</p>
+</div>
+
+<script>
+/* ============================================================== script data
+   One source of truth for the player, the chapter list and SCRIPT.md. Each cue is
+   spoken at its second and shown as the subtitle. `act` groups the chapter list;
+   `three` names the 3D beat a scene renders. */
+const SCENES = [
+  { id:'The quiet market', act:'Opening', dur:13, cues:[
+    [0.4,"US corporate debt trades about 67 billion dollars a day, against 12 trillion outstanding."],
+    [6.0,"Almost all of it is negotiated one-to-one, because a block trade moves the market the moment anyone knows it happened."]] },
+  { id:'Two ways, both bad', act:'Opening', dur:13, cues:[
+    [0.4,"But someone still has to confirm the delivery and release the payment. Today there are two ways to do that."],
+    [6.0,"Put the trade on a public chain and everyone reads it. Keep it off-chain and you hand a settlement agent the whole thing."]] },
+  { id:'A private agreement', act:'The problem', dur:13, three:'block', cues:[
+    [0.4,"Two institutions agree a block."],
+    [3.2,"A price, a size, an asset, and two names that nobody else should learn."],
+    [8.4,"Now it has to settle."]] },
+  { id:'Everyone reads it', act:'The problem', dur:13, three:'public', cues:[
+    [0.4,"Settle it on a shared-state chain and the terms are on the ledger."],
+    [5.0,"Every outsider can read the price, the size and both counterparties."],
+    [9.6,"For a block, the fact of the trade is the leak."]] },
+  { id:'Tell the agent everything', act:'The problem', dur:14, three:'agent', cues:[
+    [0.4,"So desks keep it off-chain and send it to a settlement agent instead."],
+    [5.0,"The agent must confirm one fact: was the delivery reference valid?"],
+    [9.6,"To do that it is given the price, the quantity and both names."]] },
+  { id:"The legs don't meet", act:'The problem', dur:13, three:'gap', cues:[
+    [0.4,"And payment and delivery are still two movements in two systems."],
+    [5.0,"They are reconciled afterwards, and the gap between them is where settlement risk lives."]] },
+  { id:'Escrow, in the contract', act:'Sup', dur:15, three:'escrow', cues:[
+    [0.4,"Sup removes the choice."],
+    [2.6,"The seller sends private terms to one named buyer. Nobody else receives the contract."],
+    [8.0,"The buyer accepts, the seller locks the asset, the buyer locks the payment. Both legs are now binding, on the ledger."]] },
+  { id:'What the agent receives', act:'Sup', dur:15, three:'fingerprint', cues:[
+    [0.4,"The settlement agent is not a party to the trade."],
+    [4.0,"It receives a request holding a trade id and a document hash. It re-computes the hash, and approval unlocks only on a match."],
+    [10.6,"Its dashboard cannot show the price, because the price never arrived."]] },
+  { id:'One transaction', act:'Sup', dur:14, three:'atomic', cues:[
+    [0.4,"Then either principal settles."],
+    [2.8,"Both locked legs are consumed and both deliveries are created in a single transaction."],
+    [8.4,"There is no half-settled state and nothing to reconcile."]] },
+  { id:'Two registries, one path', act:'Sup', dur:15, three:'registries', cues:[
+    [0.4,"And the payment leg can be a real asset."],
+    [3.2,"A trade has settled against real Canton Coin from the DSO's registry, and against real BitSafe CBTC from the Digital Asset Utility registry."],
+    [10.4,"Two independent registries, neither of which knows Sup exists, through one code path."]] },
+  { id:'Sup', act:'How it works', dur:8, cues:[
+    [0.4,"This is Sup."],
+    [2.4,"Private, atomic delivery-versus-payment settlement on Canton."]] },
+  { id:'Why Canton', act:'How it works', dur:16, cues:[
+    [0.4,"This is not portable to a shared-state chain."],
+    [3.6,"There, keeping the price from the agent is a request: the data is on the ledger and the agent can read it."],
+    [9.6,"On Canton it is a property of the contract. Visibility is declared in Daml, and the protocol delivers a contract only to the parties on it."]] },
+  { id:'The whole flow', act:'How it works', dur:17, cues:[
+    [0.4,"Here is the whole flow."],
+    [2.2,"Propose, privately. Accept, which opens escrow."],
+    [5.2,"Lock the asset. Lock the payment."],
+    [8.0,"The agent verifies one reference and sees nothing else."],
+    [11.6,"And settlement commits both deliveries together, or neither of them."]] },
+  { id:'Running, and checkable', act:'How it works', dur:17, cues:[
+    [0.4,"All of it runs on the shared HackCanton DevNet participant, not a local sandbox."],
+    [5.6,"38 trades have settled: 24 in a test token, 4 in real Canton Coin, 10 in real CBTC."],
+    [11.4,"46 deliberate-rejection checks require the ledger itself to refuse what the interface forbids."]] },
+  { id:'Who it is for', act:'How it works', dur:14, cues:[
+    [0.4,"It is built for the operations team that already pays a third party to confirm every delivery."],
+    [6.0,"Whose clients treat price and counterparty as confidential, and who carry the cost when two settlements disagree."]] },
+  { id:'What is not true yet', act:'How it works', dur:13, cues:[
+    [0.4,"What is real: the registries, the privacy, the atomicity, all tested against a live ledger."],
+    [6.2,"What is not: the bond and the cash token are demo assets, signing is custodial, and we have not interviewed an operations team yet, so we claim no savings."]] },
+  { id:'Ask', act:'How it works', dur:11, cues:[
+    [0.4,"Settlement that proves delivery without exposing the trade."],
+    [4.4,"What we want is one introduction: an administrator that settles institutional trades, and an agent willing to review exactly what it would see."]] },
+];
+
+/* ============================================================== player state */
+const TOTAL = SCENES.reduce((n, s) => n + s.dur, 0);
+const startOf = (i) => SCENES.slice(0, i).reduce((n, s) => n + s.dur, 0);
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const stage = document.getElementById('stage');
+let sections = [...stage.querySelectorAll('.scene')];
+const subText = document.getElementById('subText');
+const playBtn = document.getElementById('play');
+const clockEl = document.getElementById('clock');
+const trackEl = document.getElementById('track');
+const chaptersEl = document.getElementById('chapters');
+const glCanvas = document.getElementById('gl');
+const labelsEl = document.getElementById('labels');
+
+let scene = 0, local = 0, playing = false, raf = 0, lastTs = 0;
+
+/* ============================================================== three.js
+   Every object's state is a pure function of (beat, local time), so scrubbing and
+   pausing are exact: nothing is accumulated frame to frame. */
+const G = { ok: false };
+
+function init3D() {
+  if (!window.THREE) return;
+  try {
+    const T = THREE;
+    const renderer = new T.WebGLRenderer({ canvas: glCanvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setClearColor(0x08080c, 1);
+    const scene3 = new T.Scene();
+    scene3.fog = new T.Fog(0x08080c, 14, 36);
+    const camera = new T.PerspectiveCamera(42, 16 / 9, 0.1, 140);
+
+    const TEXT = 0xf4f4f6, ACC = 0x8e64ff, SOFT = 0xbea7ff, MUTE = 0x7c7f8d,
+          LINE = 0x2f3240, BAD = 0xf2555a, OK = 0x3ddc97;
+
+    /* ---- helpers -------------------------------------------------------- */
+    const cl = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+    /** 0 before `a`, 1 after `b`, smoothed in between. */
+    const ramp = (t, a, b) => { const x = cl((t - a) / (b - a)); return x * x * (3 - 2 * x); };
+    /** A pulse that rises over `up` and falls over `down`. */
+    const pulse = (t, a, up, hold, down) => ramp(t, a, a + up) * (1 - ramp(t, a + up + hold, a + up + hold + down));
+    const mat = (color, opacity = 1, wire = false) =>
+      new T.MeshBasicMaterial({ color, transparent: true, opacity, wireframe: wire });
+
+    const all = [];
+    const add = (o) => { scene3.add(o); all.push(o); return o; };
+
+    /* ---- the ground ----------------------------------------------------- */
+    const grid = add(new T.GridHelper(44, 44, LINE, 0x16171f));
+    grid.position.y = -2.7;
+    grid.material.transparent = true;
+
+    /* ---- the two principals --------------------------------------------- */
+    function node(x, y, r) {
+      const g = new T.Group();
+      g.add(new T.Mesh(new T.SphereGeometry(r * 0.34, 20, 14), mat(TEXT)));
+      const ring = new T.Mesh(new T.TorusGeometry(r, 0.014, 8, 56), mat(SOFT, 0.55));
+      g.add(ring);
+      g.position.set(x, y, 0);
+      return add(g);
+    }
+    const A = node(-4.1, 0, 0.56);          // seller
+    const B = node(4.1, 0, 0.56);           // buyer
+    const AG = node(0, 2.75, 0.4);          // settlement agent
+
+    /* ---- the link between them ------------------------------------------ */
+    const link = add(new T.Mesh(new T.CylinderGeometry(0.012, 0.012, 1, 6), mat(LINE, 1)));
+    link.rotation.z = Math.PI / 2;
+
+    /* ---- the trade itself ----------------------------------------------- */
+    const card = add(new T.Mesh(new T.BoxGeometry(3.1, 1.75, 0.04), mat(ACC, 0.1)));
+    const cardEdge = add(new T.Mesh(new T.BoxGeometry(3.1, 1.75, 0.04), mat(SOFT, 0.9, true)));
+
+    /* ---- outsiders, for the public-chain beat --------------------------- */
+    const OUT = 22;
+    const outs = [];
+    const leakGeo = new T.BufferGeometry();
+    const leakPos = new Float32Array(OUT * 6);
+    for (let i = 0; i < OUT; i++) {
+      const a = (i / OUT) * Math.PI * 2 + 0.3;
+      const rr = 8.2 + (i % 3) * 1.1;
+      const p = new T.Vector3(Math.cos(a) * rr, Math.sin(a) * rr * 0.46, -1.5 - (i % 4) * 1.4);
+      const m = add(new T.Mesh(new T.SphereGeometry(0.11, 10, 8), mat(MUTE, 0.9)));
+      m.position.copy(p);
+      outs.push(m);
+      leakPos.set([0, 0, 0, p.x, p.y, p.z], i * 6);
+    }
+    leakGeo.setAttribute('position', new T.BufferAttribute(leakPos, 3));
+    const leaks = add(new T.LineSegments(leakGeo, new T.LineBasicMaterial({ color: BAD, transparent: true, opacity: 0 })));
+
+    /* ---- the beam to the agent ------------------------------------------ */
+    const beamWide = add(new T.Mesh(new T.PlaneGeometry(2.2, 2.9), mat(BAD, 0)));
+    beamWide.position.set(0, 1.45, -0.1);
+    const beamThin = add(new T.Mesh(new T.PlaneGeometry(0.1, 2.9), mat(OK, 0)));
+    beamThin.position.set(0, 1.45, -0.1);
+
+    /* ---- the two legs --------------------------------------------------- */
+    const legGeo = new T.BoxGeometry(0.62, 0.62, 0.62);
+    const legA = add(new T.Mesh(legGeo, mat(TEXT, 0.95, true)));   // the asset
+    const legB = add(new T.Mesh(legGeo, mat(SOFT, 0.95, true)));   // the payment
+    const gapBar = add(new T.Mesh(new T.BoxGeometry(1, 0.05, 0.05), mat(BAD, 0)));
+
+    /* ---- escrow and the settlement flash -------------------------------- */
+    const escrow = add(new T.Mesh(new T.BoxGeometry(2.6, 1.5, 1.5), mat(ACC, 0, true)));
+    const flash = add(new T.Mesh(new T.SphereGeometry(1, 24, 16), mat(SOFT, 0, true)));
+
+    /* ---- the two registries --------------------------------------------- */
+    const regL = add(new T.Mesh(new T.TorusGeometry(0.78, 0.03, 10, 48), mat(OK, 0)));
+    const regR = add(new T.Mesh(new T.TorusGeometry(0.78, 0.03, 10, 48), mat(ACC, 0)));
+    regL.position.set(-4.1, -0.1, -2.2);
+    regR.position.set(4.1, -0.1, -2.2);
+    const coinL = add(new T.Mesh(new T.OctahedronGeometry(0.3), mat(OK, 0)));
+    const coinR = add(new T.Mesh(new T.OctahedronGeometry(0.3), mat(ACC, 0)));
+
+    /* ---- projected DOM labels ------------------------------------------- */
+    const pool = [];
+    for (let i = 0; i < 14; i++) {
+      const d = document.createElement('div');
+      d.className = 'lbl';
+      d.style.opacity = 0;
+      labelsEl.appendChild(d);
+      pool.push(d);
+    }
+    let labels = [];
+    const L = (x, y, z, text, cls = '', op = 1) => labels.push({ p: new T.Vector3(x, y, z), text, cls, op });
+
+    /* ---- per-beat state ------------------------------------------------- */
+    function hideAll() {
+      [card, cardEdge].forEach((m) => (m.material.opacity = 0));
+      link.material.opacity = 0;
+      leaks.material.opacity = 0;
+      outs.forEach((m) => { m.material.opacity = 0; m.material.color.setHex(MUTE); });
+      beamWide.material.opacity = 0; beamThin.material.opacity = 0;
+      legA.material.opacity = 0; legB.material.opacity = 0; gapBar.material.opacity = 0;
+      escrow.material.opacity = 0; flash.material.opacity = 0;
+      [regL, regR, coinL, coinR].forEach((m) => (m.material.opacity = 0));
+      [A, B, AG].forEach((g) => g.children.forEach((c) => (c.material.opacity = 0)));
+      labels = [];
+    }
+    const show = (g, o, ringO = o * 0.55) => {
+      g.children[0].material.opacity = o;
+      g.children[1].material.opacity = ringO;
+    };
+    function setLink(o, width = 8.2) {
+      link.material.opacity = o;
+      link.scale.y = width;
+    }
+
+    function update(beat, t) {
+      hideAll();
+      // A slow, steady drift so a still frame never looks frozen.
+      camera.position.set(Math.sin(t * 0.06) * 0.55, 0.85, 11.4);
+      camera.lookAt(0, 0.1, 0);
+      grid.material.opacity = 0.5;
+
+      if (beat === 'block') {
+        show(A, ramp(t, 0.2, 1.6)); show(B, ramp(t, 0.6, 2.0));
+        setLink(ramp(t, 2.4, 4.2) * 0.9, 8.2 * ramp(t, 2.4, 4.2));
+        const c = ramp(t, 4.6, 6.2);
+        card.material.opacity = c * 0.1; cardEdge.material.opacity = c * 0.9;
+        card.scale.setScalar(0.8 + 0.2 * c); cardEdge.scale.copy(card.scale);
+        L(-4.1, -1.15, 0, 'seller', '', ramp(t, 0.8, 2));
+        L(4.1, -1.15, 0, 'buyer', '', ramp(t, 1.2, 2.4));
+        L(0, 0.52, 0, 'price  ·  size', 'big', ramp(t, 5.4, 6.6));
+        L(0, -0.05, 0, 'asset  ·  quantity', 'big', ramp(t, 6.4, 7.6));
+        L(0, -0.6, 0, 'seller  ·  buyer', 'big', ramp(t, 7.4, 8.6));
+        L(0, -2.1, 0, 'confidential', 'hi', ramp(t, 9.4, 10.6));
+      }
+
+      else if (beat === 'public') {
+        show(A, 1); show(B, 1); setLink(0.9);
+        card.material.opacity = 0.1; cardEdge.material.opacity = 0.9;
+        card.scale.setScalar(1); cardEdge.scale.setScalar(1);
+        const o = ramp(t, 1.4, 4.4);
+        outs.forEach((m, i) => {
+          const k = ramp(t, 1.4 + i * 0.09, 2.4 + i * 0.09);
+          m.material.opacity = k * 0.95;
+          m.material.color.setHex(k > 0.6 && t > 5 ? BAD : MUTE);
+        });
+        leaks.material.opacity = ramp(t, 4.8, 7.4) * 0.5;
+        L(0, 0.25, 0, 'price  ·  size  ·  both names', 'big', 1);
+        L(0, -2.2, 0, `readable by ${Math.round(ramp(t, 1.4, 4.4) * OUT)} outsiders`, 'bad', o);
+        L(0, 3.5, 0, 'shared state', '', ramp(t, 0.4, 1.6));
+      }
+
+      else if (beat === 'agent') {
+        show(A, 1); show(B, 1); setLink(0.45);
+        card.material.opacity = 0.1; cardEdge.material.opacity = 0.6;
+        card.scale.setScalar(1); cardEdge.scale.setScalar(1);
+        show(AG, ramp(t, 0.6, 2.2));
+        const b = ramp(t, 3.4, 5.6);
+        beamWide.material.opacity = b * 0.22;
+        beamWide.scale.set(1, 1, 1);
+        L(0, 3.65, 0, 'settlement agent', '', ramp(t, 1.0, 2.4));
+        L(0, -2.2, 0, 'needs to confirm one fact', '', ramp(t, 5.2, 6.4));
+        L(-2.6, 2.0, 0, 'price', 'bad', ramp(t, 7.0, 7.9));
+        L(2.6, 2.0, 0, 'quantity', 'bad', ramp(t, 7.9, 8.8));
+        L(-2.6, 1.1, 0, 'both names', 'bad', ramp(t, 8.8, 9.7));
+        L(2.6, 1.1, 0, 'the whole trade', 'bad', ramp(t, 9.7, 10.6));
+      }
+
+      else if (beat === 'gap') {
+        show(A, 1); show(B, 1); setLink(0.3);
+        // Delivery leaves early, payment leaves late: they never line up.
+        const pa = ramp(t, 1.2, 6.0), pb = ramp(t, 4.2, 10.0);
+        legA.material.opacity = ramp(t, 0.8, 1.6);
+        legB.material.opacity = ramp(t, 3.8, 4.6);
+        legA.position.set(-4.1 + 8.2 * pa, 0.95, 0);
+        legB.position.set(4.1 - 8.2 * pb, -0.95, 0);
+        legA.rotation.set(t * 0.5, t * 0.7, 0);
+        legB.rotation.set(-t * 0.5, t * 0.6, 0);
+        const g = ramp(t, 5.0, 6.4);
+        gapBar.material.opacity = g * 0.9;
+        const dx = legA.position.x - legB.position.x;
+        gapBar.scale.x = Math.max(0.2, Math.abs(dx));
+        gapBar.position.set((legA.position.x + legB.position.x) / 2, 0, 0);
+        L(-4.1, -1.15, 0, 'seller', '', 1); L(4.1, -1.15, 0, 'buyer', '', 1);
+        L(legA.position.x, 1.9, 0, 'delivery', '', legA.material.opacity);
+        L(legB.position.x, -1.95, 0, 'payment', '', legB.material.opacity);
+        L(0, 2.9, 0, 'two systems, reconciled afterwards', 'big', ramp(t, 2.0, 3.4));
+        L(0, -2.6, 0, 'this gap is the settlement risk', 'bad', g);
+      }
+
+      else if (beat === 'escrow') {
+        show(A, 1); show(B, 1);
+        setLink(ramp(t, 0.4, 1.4) * 0.5);
+        // the private offer travels to exactly one counterparty
+        const off = ramp(t, 1.0, 3.6);
+        card.material.opacity = (1 - ramp(t, 6.0, 7.4)) * 0.1;
+        cardEdge.material.opacity = ramp(t, 1.0, 2.2) * 0.9 * (1 - ramp(t, 6.0, 7.4));
+        card.scale.setScalar(0.62); cardEdge.scale.setScalar(0.62);
+        card.position.set(-4.1 + 8.2 * off * 0.5, 0.05, 0.4);
+        cardEdge.position.copy(card.position);
+        // escrow opens, then both legs fly in and lock
+        const e = ramp(t, 6.2, 7.8);
+        escrow.material.opacity = e * 0.75;
+        escrow.scale.setScalar(0.5 + 0.5 * e);
+        escrow.rotation.y = 0.35 + t * 0.05;
+        const la = ramp(t, 8.4, 10.6), lb = ramp(t, 10.0, 12.2);
+        legA.material.opacity = ramp(t, 8.2, 8.8);
+        legB.material.opacity = ramp(t, 9.8, 10.4);
+        legA.position.set(-4.1 + 3.4 * la, 0.52 - 0.52 * la, 0.2);
+        legB.position.set(4.1 - 3.4 * lb, -0.52 + 0.52 * lb, -0.2);
+        legA.rotation.set(0.4 * (1 - la), 0.6 * (1 - la), 0);
+        legB.rotation.set(0.4 * (1 - lb), -0.6 * (1 - lb), 0);
+        if (la > 0.99) legA.material.color.setHex(ACC); else legA.material.color.setHex(TEXT);
+        L(-4.1, -1.15, 0, 'seller', '', 1); L(4.1, -1.15, 0, 'buyer', '', 1);
+        L(card.position.x, 1.0, 0, 'private terms', 'hi', cardEdge.material.opacity);
+        L(0, 2.3, 0, 'escrow', 'big', e);
+        L(-2.4, -1.9, 0, la > 0.99 ? 'asset locked' : 'asset', 'hi', legA.material.opacity);
+        L(2.4, -1.9, 0, lb > 0.99 ? 'payment locked' : 'payment', 'hi', legB.material.opacity);
+        L(0, -2.65, 0, 'both legs binding, on the ledger', '', ramp(t, 12.4, 13.6));
+      }
+
+      else if (beat === 'fingerprint') {
+        show(A, 1); show(B, 1); show(AG, 1);
+        escrow.material.opacity = 0.75; escrow.scale.setScalar(1);
+        escrow.rotation.y = 0.35 + t * 0.05;
+        legA.material.opacity = 0.95; legA.material.color.setHex(ACC);
+        legB.material.opacity = 0.95;
+        legA.position.set(-0.7, 0, 0.2); legB.position.set(0.7, 0, -0.2);
+        legA.rotation.set(0, 0, 0); legB.rotation.set(0, 0, 0);
+        const b = ramp(t, 2.6, 4.4);
+        beamThin.material.opacity = b * 0.8;
+        L(0, 3.65, 0, 'settlement agent', '', 1);
+        L(0, 1.62, 0, 'TRADE-0042', 'hi plain', ramp(t, 4.4, 5.4));
+        L(0, 1.05, 0, 'sha256 9f3c…e1b0', 'hi plain', ramp(t, 5.4, 6.4));
+        L(-4.1, -1.15, 0, 'seller', '', 1); L(4.1, -1.15, 0, 'buyer', '', 1);
+        L(0, -2.1, 0, 'price · size · asset: never sent', 'big', ramp(t, 8.0, 9.4));
+        L(0, -2.75, 0, 'so the dashboard cannot show them', '', ramp(t, 10.6, 11.8));
+      }
+
+      else if (beat === 'atomic') {
+        show(A, 1); show(B, 1); show(AG, 0.35, 0.18);
+        const fire = ramp(t, 2.6, 3.2);
+        // escrow collapses to a point, then both deliveries leave together
+        escrow.material.opacity = 0.75 * (1 - fire);
+        escrow.scale.setScalar(1 - 0.85 * fire);
+        escrow.rotation.y = 0.35 + t * 0.05;
+        const fl = pulse(t, 2.9, 0.35, 0.1, 1.9);
+        flash.material.opacity = fl * 0.7;
+        flash.scale.setScalar(0.4 + ramp(t, 2.9, 5.0) * 7.5);
+        const out = ramp(t, 3.2, 6.6);
+        legA.material.opacity = 1; legB.material.opacity = 1;
+        legA.material.color.setHex(ACC);
+        // the payment goes to the seller, the asset to the buyer — simultaneously
+        legA.position.set(-0.7 + 3.4 * out, 0, 0.2);
+        legB.position.set(0.7 - 3.4 * out, 0, -0.2);
+        legA.rotation.set(0, t * 0.6, 0); legB.rotation.set(0, -t * 0.6, 0);
+        L(0, 2.45, 0, 'SettleDvP', 'big plain', ramp(t, 1.2, 2.4));
+        L(0, 1.75, 0, 'one transaction', 'hi', ramp(t, 3.4, 4.4));
+        L(legA.position.x, -1.3, 0, 'asset delivered', '', out);
+        L(legB.position.x, 1.25, 0, 'payment delivered', '', out);
+        L(-4.1, -2.2, 0, 'seller', '', 1); L(4.1, -2.2, 0, 'buyer', '', 1);
+        L(0, -2.6, 0, 'or neither of them', 'hi', ramp(t, 8.6, 9.8));
+      }
+
+      else if (beat === 'registries') {
+        show(A, 0.5, 0.25); show(B, 0.5, 0.25);
+        escrow.material.opacity = 0.55; escrow.scale.setScalar(1);
+        escrow.rotation.y = 0.35 + t * 0.05;
+        const rl = ramp(t, 0.8, 2.6), rr = ramp(t, 1.8, 3.6);
+        regL.material.opacity = rl * 0.9; regR.material.opacity = rr * 0.9;
+        regL.rotation.z = t * 0.5; regR.rotation.z = -t * 0.5;
+        regL.scale.setScalar(0.5 + 0.5 * rl); regR.scale.setScalar(0.5 + 0.5 * rr);
+        const ml = ramp(t, 4.4, 8.0), mr = ramp(t, 5.4, 9.0);
+        coinL.material.opacity = ramp(t, 4.2, 4.8); coinR.material.opacity = ramp(t, 5.2, 5.8);
+        coinL.position.set(-4.1 + 4.1 * ml, -0.1 + 0.1 * ml, -2.2 + 2.2 * ml);
+        coinR.position.set(4.1 - 4.1 * mr, -0.1 + 0.1 * mr, -2.2 + 2.2 * mr);
+        coinL.rotation.set(t * 0.8, t * 0.6, 0); coinR.rotation.set(-t * 0.8, t * 0.6, 0);
+        const fl = pulse(t, 9.2, 0.3, 0.1, 1.8);
+        flash.material.opacity = fl * 0.6;
+        flash.scale.setScalar(0.4 + ramp(t, 9.2, 11.0) * 5.5);
+        L(-4.1, -1.5, -2.2, 'DSO registry', '', rl);
+        L(-4.1, -2.0, -2.2, 'canton coin', 'hi', rl);
+        L(4.1, -1.5, -2.2, 'digital asset utility', '', rr);
+        L(4.1, -2.0, -2.2, 'bitsafe cbtc', 'hi', rr);
+        L(0, 2.4, 0, 'one Registry interface', 'big plain', ramp(t, 6.6, 8.0));
+        L(0, -2.7, 0, 'neither registry knows Sup exists', '', ramp(t, 11.2, 12.4));
+      }
+
+      /* ---- project the labels ------------------------------------------- */
+      const w = stage.clientWidth, h = stage.clientHeight;
+      pool.forEach((d, i) => {
+        const it = labels[i];
+        if (!it || !it.text || (it.op ?? 1) <= 0.01) { d.style.opacity = 0; return; }
+        const v = it.p.clone().project(camera);
+        d.className = 'lbl ' + it.cls;
+        d.textContent = it.text;
+        d.style.left = ((v.x * 0.5 + 0.5) * w) + 'px';
+        d.style.top = ((-v.y * 0.5 + 0.5) * h) + 'px';
+        d.style.opacity = it.op ?? 1;
+      });
+
+      renderer.render(scene3, camera);
+    }
+
+    function resize() {
+      const w = stage.clientWidth, h = stage.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    new ResizeObserver(() => { resize(); if (SCENES[scene].three) draw(); }).observe(stage);
+    resize();
+
+    G.ok = true;
+    G.update = update;
+    G.clearLabels = () => pool.forEach((d) => (d.style.opacity = 0));
+  } catch (err) {
+    G.ok = false;
+  }
+}
+
+/* ============================================================== drawing */
+function draw() {
+  const s = SCENES[scene];
+  let line = '';
+  for (const [t, text] of s.cues) if (local >= t) line = text;
+  subText.textContent = line;
+  clockEl.textContent = `${mmss(startOf(scene) + local)} / ${mmss(TOTAL)}`;
+  [...trackEl.children].forEach((seg, k) => {
+    const pct = k < scene ? 100 : k > scene ? 0 : Math.min(100, (local / s.dur) * 100);
+    seg.firstElementChild.style.right = (100 - pct) + '%';
+  });
+
+  if (s.three && G.ok) {
+    glCanvas.style.display = 'block';
+    G.update(s.three, reduced ? s.dur : local);
+  } else {
+    glCanvas.style.display = 'none';
+    if (G.clearLabels) G.clearLabels();
+  }
+}
+
+/** Re-mount a section so its CSS entrance animations restart from the top. */
+function mount(i) {
+  sections.forEach((el, k) => { if (k !== i) el.classList.remove('live'); });
+  const fresh = sections[i].cloneNode(true);
+  sections[i].replaceWith(fresh);
+  sections[i] = fresh;
+  fresh.classList.add('live');
+}
+
+function goto(i) {
+  scene = Math.max(0, Math.min(SCENES.length - 1, i));
+  local = 0;
+  stage.classList.toggle('rest', !playing);
+  mount(scene);
+  [...chaptersEl.querySelectorAll('button')].forEach((b) => b.setAttribute('aria-current', String(Number(b.dataset.i) === scene)));
+  lastTs = performance.now();
+  draw();
+}
+
+function tick(ts) {
+  if (!playing) return;
+  local += (ts - lastTs) / 1000;
+  lastTs = ts;
+  if (local >= SCENES[scene].dur) {
+    if (scene === SCENES.length - 1) { local = SCENES[scene].dur; draw(); pause(); return; }
+    goto(scene + 1);
+  }
+  draw();
+  raf = requestAnimationFrame(tick);
+}
+
+function play() {
+  if (scene === SCENES.length - 1 && local >= SCENES[scene].dur) goto(0);
+  playing = true;
+  stage.classList.remove('paused');
+  if (stage.classList.contains('rest')) { stage.classList.remove('rest'); mount(scene); }
+  playBtn.innerHTML = '&#10074;&#10074; Pause';
+  lastTs = performance.now();
+  raf = requestAnimationFrame(tick);
+}
+function pause() {
+  playing = false;
+  stage.classList.add('paused');
+  playBtn.innerHTML = '&#9654; Play';
+  cancelAnimationFrame(raf);
+}
+
+/* ============================================================== chrome */
+let lastAct = '';
+SCENES.forEach((s, i) => {
+  if (s.act !== lastAct) {
+    const h = document.createElement('div'); h.className = 'act'; h.textContent = s.act;
+    chaptersEl.appendChild(h); lastAct = s.act;
+  }
+  const b = document.createElement('button');
+  b.dataset.i = String(i);
+  b.innerHTML = `<span class="n">${String(i).padStart(2, '0')}</span><span>${s.id}</span><span class="t2">${mmss(s.dur)}</span>`;
+  b.addEventListener('click', () => goto(i));
+  chaptersEl.appendChild(b);
+
+  const seg = document.createElement('div');
+  seg.className = 'seg' + (s.three ? ' a3d' : '');
+  seg.style.flex = String(s.dur);
+  seg.title = `${i}. ${s.id}`;
+  seg.innerHTML = '<i></i>';
+  seg.addEventListener('click', () => goto(i));
+  trackEl.appendChild(seg);
+});
+
+document.getElementById('script').innerHTML = SCENES.map((s, i) => {
+  const base = startOf(i);
+  return `<h3>${String(i).padStart(2, '0')} · ${s.id}</h3>` +
+    s.cues.map(([t, text]) => `<p><span class="tc">${mmss(base + t)}</span><span>${text}</span></p>`).join('');
+}).join('');
+document.getElementById('runtime').textContent = `${SCENES.length} scenes · ${mmss(TOTAL)} · 3D middle`;
+
+playBtn.addEventListener('click', () => (playing ? pause() : play()));
+document.getElementById('next').addEventListener('click', () => goto(scene + 1));
+document.getElementById('prev').addEventListener('click', () => goto(local > 1.5 ? scene : scene - 1));
+const cc = document.getElementById('cc');
+cc.addEventListener('click', () => {
+  const on = cc.getAttribute('aria-pressed') !== 'true';
+  cc.setAttribute('aria-pressed', String(on));
+  document.getElementById('subs').classList.toggle('off', !on);
+});
+const toggleClean = () => { document.body.classList.toggle('clean'); };
+document.getElementById('clean').addEventListener('click', toggleClean);
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+  else if (e.key === 'ArrowRight') goto(scene + 1);
+  else if (e.key === 'ArrowLeft') goto(local > 1.5 ? scene : scene - 1);
+  else if (e.key.toLowerCase() === 'c') cc.click();
+  else if (e.key === 'Escape' && document.body.classList.contains('clean')) toggleClean();
+});
+
+init3D();
+if (!G.ok) document.body.classList.add('no-gl');
+goto(0);
+</script>
