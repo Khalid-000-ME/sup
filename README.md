@@ -1,6 +1,6 @@
 <img src="web/public/logo.svg" alt="Sup" width="56" style="background:#08080c;padding:12px">
 
-# Sup — private atomic delivery-versus-payment settlement on Canton
+# Sup — confidential OTC settlement desk for tokenized bonds on Canton - atomic delivery-versus-payment against real BitSafe cBTC and real Canton Coin, with a settlement agent that never sees the trade.
 
 > **Settlement that proves delivery without exposing the trade.**
 
