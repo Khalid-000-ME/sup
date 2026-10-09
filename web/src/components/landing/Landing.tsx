@@ -230,8 +230,8 @@ const TX = [
 ];
 
 const STATS = [
-  { v: "35+", l: "trades settled on DevNet" },
-  { v: "9", l: "paid in real CBTC" },
+  { v: "38", l: "trades settled on DevNet" },
+  { v: "10", l: "paid in real CBTC" },
   { v: "46", l: "contract rejection checks" },
   { v: "12", l: "contract templates" },
 ];

@@ -35,7 +35,7 @@ Three properties, each enforced by the ledger rather than the interface:
 
 1. **The agent is told the minimum.** It is not a party to the trade contract. It receives a request containing a trade reference and a document hash. The price, the asset and the quantity live on a contract Canton never delivers to it — so its dashboard cannot show them, because they never arrived.
 2. **Settlement is atomic.** Both locked legs are consumed and both deliveries are created in a single transaction. No half-settled state, nothing to reconcile.
-3. **It uses the Canton Token Standard.** Sup's tokens and escrow legs are standard `Holding`s and `Allocation`s, and a trade can settle against **real Canton Coin** issued by the DSO's registry — Sup executes the registry's allocation and its own in the same transaction.
+3. **It uses the Canton Token Standard.** Sup's tokens and escrow legs are standard `Holding`s and `Allocation`s, and a trade can settle against **real Canton Coin** from the DSO's registry or **real BitSafe CBTC** from the Digital Asset Utility registry — Sup executes the registry's allocation and its own in the same transaction. Two independent registries, neither of which knows Sup exists, through one code path.
 
 ## 3. Why Canton
 
@@ -65,6 +65,8 @@ They have three things in common:
 - **14 Daml test scripts, with 46 deliberate-rejection checks**: wrong asset class, short quantity, wrong currency, a non-agent approving, an outsider settling, one party springing a locked leg, an approval from a different trade, an allocation that does not match the trade.
 - A real settlement transaction is captured on DevNet with its events: one `SettleDvP` consuming both locked legs and creating both deliveries.
 - Real Canton Coin moves through the standard registry on DevNet: faucet → `TransferFactory` → accept → `AllocationFactory` → execute, ending with a party that has **no wallet** receiving the coin. And a Sup trade has settled in real Canton Coin on DevNet: Sup's bond allocation and the DSO registry's Amulet allocation executing in **one transaction** (`12203a6f3f48c035…`, offset 2705360).
+- **Real BitSafe CBTC settles the same way, through a different registry.** CBTC arrives from BitSafe's DevNet faucet as a standard `TransferInstruction`, is accepted, allocated and executed through the Digital Asset Utility registry, and a bond trade has settled against it in one transaction (`1220b7897407c4…`, offset 2759757). The seller receives real CBTC holding no wallet and no credential of its own. The same `Registry` interface drives Canton Coin and CBTC, which is the evidence that the pattern generalises rather than being hardcoded to one asset.
+- **38 trades settled on DevNet:** 24 in the CashUSD test token, 4 in real Canton Coin, 10 in real CBTC.
 
 **Not proven:** we have not interviewed settlement-operations teams. We do not know their actual break rates, so we make no claim about savings. That is the first thing we would do with a design partner.
 
