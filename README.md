@@ -1,6 +1,6 @@
 <img src="web/public/logo.svg" alt="Sup" width="56" style="background:#08080c;padding:12px">
 
-# Sup - confidential OTC settlement desk for tokenized bonds - atomic delivery-versus-payment against cBTC and Canton Coin, with a settlement agent that never sees the trade
+# Sup - confidential OTC settlement desk for tokenized bonds
 
 > **Settlement that proves delivery without exposing the trade.**
 
